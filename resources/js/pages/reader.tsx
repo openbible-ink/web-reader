@@ -628,16 +628,17 @@ export default function Reader({ artworks = [] }: ReaderProps) {
                                 ) : (
                                     <div
                                         key={item.key}
-                                        className="relative grid grid-cols-[2.6rem_1fr] gap-3 py-1.5 sm:grid-cols-[3rem_1fr] sm:gap-4"
+                                        className="grid grid-cols-[4.5rem_1.5rem_minmax(0,1fr)] gap-x-2 py-1.5"
                                     >
-                                        {item.number === '1' && (
-                                            <span
-                                                aria-hidden="true"
-                                                className="absolute -top-1 left-0 font-serif text-[3.8rem] leading-none text-[#b85c26]"
-                                            >
-                                                {chapter}
-                                            </span>
-                                        )}
+                                        <span aria-hidden="true">
+                                            {item.number === '1' && (
+                                                <span
+                                                    className={`-mt-1 block font-serif leading-none text-[#b85c26] ${chapter.length >= 3 ? 'text-[2.75rem]' : 'text-[3.5rem]'}`}
+                                                >
+                                                    {chapter}
+                                                </span>
+                                            )}
+                                        </span>
                                         <span className="pt-1 text-right text-sm text-stone-500 tabular-nums">
                                             {item.number}
                                         </span>
