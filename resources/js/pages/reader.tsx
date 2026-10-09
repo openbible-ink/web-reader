@@ -1,16 +1,14 @@
-import { Head } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import {
+    ArrowLeft,
+    ArrowRight,
     Bookmark,
     BookOpen,
     ChevronDown,
-    ChevronLeft,
-    ChevronRight,
     List,
-    Menu,
     MoreHorizontal,
     NotebookPen,
     Search,
-    Type,
     X,
 } from 'lucide-react';
 import { Fragment, type ReactNode, useEffect, useMemo, useState } from 'react';
@@ -322,7 +320,6 @@ export default function Reader({ artworks = [] }: ReaderProps) {
     const [preferences, setPreferences] =
         useState<OebVariantOptions>(savedPreferences);
     const [settingsOpen, setSettingsOpen] = useState(false);
-    const [libraryOpen, setLibraryOpen] = useState(false);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -400,19 +397,11 @@ export default function Reader({ artworks = [] }: ReaderProps) {
                         <Brand />
                     </div>
                     <div className="flex items-center gap-5 text-stone-950">
-                        <button type="button" aria-label="Search">
+                        <Link href="/search" aria-label="Search">
                             <Search className="size-5" />
-                        </button>
-                        <button type="button" aria-label="Bookmark">
-                            <Bookmark className="hidden size-5 sm:block" />
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setLibraryOpen(true)}
-                            aria-label="Open library"
-                        >
-                            <Menu className="size-5 lg:hidden" />
-                            <MoreHorizontal className="hidden size-5 lg:block" />
+                        </Link>
+                        <button type="button" aria-label="More options">
+                            <MoreHorizontal className="size-5" />
                         </button>
                     </div>
                 </header>
@@ -454,19 +443,13 @@ export default function Reader({ artworks = [] }: ReaderProps) {
                     <div className="mx-auto max-w-[52rem] px-7 pb-24 sm:px-12 lg:px-14">
                         <div className="sticky top-0 z-20 flex h-[5.4rem] items-center justify-between border-b border-stone-200 bg-[#fffdf9]/95 backdrop-blur">
                             <div className="flex items-center gap-3">
-                                <button
-                                    type="button"
-                                    aria-label="Previous chapter"
-                                    disabled={chapterIndex <= 0}
-                                    onClick={() =>
-                                        changeChapter(
-                                            chapters[chapterIndex - 1]!,
-                                        )
-                                    }
-                                    className="grid size-10 place-items-center rounded-full hover:bg-stone-100 disabled:opacity-30"
+                                <Link
+                                    href="/books/john"
+                                    aria-label="Back to John overview"
+                                    className="grid size-9 place-items-center rounded-full hover:bg-stone-100"
                                 >
-                                    <ChevronLeft className="size-5" />
-                                </button>
+                                    <ArrowLeft className="size-5" />
+                                </Link>
                                 <label className="relative font-serif text-lg font-semibold">
                                     <span className="sr-only">Chapter</span>
                                     <select
@@ -488,6 +471,19 @@ export default function Reader({ artworks = [] }: ReaderProps) {
                             <div className="flex items-center gap-1">
                                 <button
                                     type="button"
+                                    aria-label="Previous chapter"
+                                    disabled={chapterIndex <= 0}
+                                    onClick={() =>
+                                        changeChapter(
+                                            chapters[chapterIndex - 1]!,
+                                        )
+                                    }
+                                    className="grid size-9 place-items-center rounded-full border border-stone-200 hover:bg-stone-100 disabled:opacity-30 sm:size-10"
+                                >
+                                    <ArrowLeft className="size-4" />
+                                </button>
+                                <button
+                                    type="button"
                                     aria-label="Next chapter"
                                     disabled={
                                         chapterIndex === -1 ||
@@ -498,9 +494,9 @@ export default function Reader({ artworks = [] }: ReaderProps) {
                                             chapters[chapterIndex + 1]!,
                                         )
                                     }
-                                    className="grid size-10 place-items-center rounded-full border border-stone-100 hover:bg-stone-100 disabled:opacity-30"
+                                    className="grid size-9 place-items-center rounded-full border border-stone-200 hover:bg-stone-100 disabled:opacity-30 sm:size-10"
                                 >
-                                    <ChevronRight className="size-5" />
+                                    <ArrowRight className="size-4" />
                                 </button>
                                 <button
                                     type="button"
@@ -510,7 +506,9 @@ export default function Reader({ artworks = [] }: ReaderProps) {
                                     aria-label="Reading preferences"
                                     className="grid size-11 place-items-center rounded-full hover:bg-stone-100"
                                 >
-                                    <Type className="size-5" />
+                                    <span className="font-serif text-lg font-medium">
+                                        Aa
+                                    </span>
                                 </button>
                                 <button
                                     type="button"
@@ -518,6 +516,13 @@ export default function Reader({ artworks = [] }: ReaderProps) {
                                     className="hidden size-11 place-items-center rounded-full hover:bg-stone-100 sm:grid"
                                 >
                                     <List className="size-5" />
+                                </button>
+                                <button
+                                    type="button"
+                                    aria-label="Bookmark chapter"
+                                    className="grid size-11 place-items-center rounded-full hover:bg-stone-100"
+                                >
+                                    <Bookmark className="size-5" />
                                 </button>
                             </div>
                         </div>
@@ -651,21 +656,6 @@ export default function Reader({ artworks = [] }: ReaderProps) {
                         </article>
                     </div>
                 </main>
-
-                {libraryOpen && (
-                    <div className="fixed inset-0 z-50 lg:hidden">
-                        <button
-                            type="button"
-                            aria-label="Close library"
-                            onClick={() => setLibraryOpen(false)}
-                            className="absolute inset-0 bg-stone-950/40 backdrop-blur-[2px]"
-                        />
-                        <aside className="absolute inset-x-0 bottom-0 h-[82vh] overflow-hidden rounded-t-[1.8rem] shadow-2xl">
-                            <div className="absolute top-2 left-1/2 z-10 h-1 w-10 -translate-x-1/2 rounded-full bg-stone-400" />
-                            <Library close={() => setLibraryOpen(false)} />
-                        </aside>
-                    </div>
-                )}
             </div>
         </>
     );
