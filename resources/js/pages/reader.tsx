@@ -186,8 +186,23 @@ function readingItems(nodes: FlowNode[]): ReadingItem[] {
         if (verse) items.push({ ...verse, kind: 'verse' });
         verse = null;
     };
+    const consumeInline = (node: InlineNode) => {
+        if (node.type === 'verseStart') {
+            flushVerse();
+            verse = { key: node.id, number: node.number, content: [] };
+        } else if (verse) {
+            verse.content.push(node);
+        }
+    };
+
     for (const node of nodes) {
-        if (node.type !== 'block') continue;
+        if (node.type === 'chapterStart') continue;
+
+        if (node.type !== 'block') {
+            consumeInline(node);
+            continue;
+        }
+
         if (node.style.startsWith('s') || node.style.startsWith('ms')) {
             flushVerse();
             items.push({
@@ -197,13 +212,7 @@ function readingItems(nodes: FlowNode[]): ReadingItem[] {
             });
             continue;
         }
-        if (node.style === 'b') continue;
-        for (const child of node.children) {
-            if (child.type === 'verseStart') {
-                flushVerse();
-                verse = { key: child.id, number: child.number, content: [] };
-            } else if (verse) verse.content.push(child);
-        }
+        node.children.forEach(consumeInline);
     }
     flushVerse();
     return items;
