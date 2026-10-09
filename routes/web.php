@@ -1,8 +1,9 @@
 <?php
 
+use App\Http\Controllers\ReaderController;
 use Illuminate\Support\Facades\Route;
 
-Route::inertia('/', 'reader')->name('home');
+Route::get('/', ReaderController::class)->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::inertia('dashboard', 'dashboard')->name('dashboard');
