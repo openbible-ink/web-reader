@@ -429,7 +429,7 @@ export default function Reader({ artwork }: ReaderProps) {
                     </div>
                 </section>
 
-                <main className="relative z-20 -mt-7 min-h-screen rounded-t-[2rem] bg-[#fffdf9] shadow-[0_-8px_30px_rgba(62,49,30,0.06)] lg:mt-0 lg:rounded-t-[1.8rem]">
+                <main className="relative z-20 -mt-7 min-h-screen rounded-t-[2rem] bg-[#fffdf9] shadow-[0_-8px_30px_rgba(62,49,30,0.06)] lg:rounded-t-[1.8rem]">
                     <div className="mx-auto max-w-[52rem] px-7 pb-24 sm:px-12 lg:px-14">
                         <div className="sticky top-0 z-20 flex h-[5.4rem] items-center justify-between border-b border-stone-200 bg-[#fffdf9]/95 backdrop-blur">
                             <div className="flex items-center gap-3">
@@ -612,7 +612,7 @@ export default function Reader({ artwork }: ReaderProps) {
                                         {item.number === '1' && (
                                             <span
                                                 aria-hidden="true"
-                                                className="absolute -top-1 -left-7 font-serif text-[3.8rem] leading-none text-[#b85c26] sm:-left-11"
+                                                className="absolute -top-1 left-0 font-serif text-[3.8rem] leading-none text-[#b85c26]"
                                             >
                                                 {chapter}
                                             </span>
