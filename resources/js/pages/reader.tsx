@@ -34,15 +34,15 @@ interface ScriptureArtwork {
     focalPoint?: { x?: number; y?: number };
     reference: {
         book: string;
-        chapter?: string;
-        verseStart?: string;
-        verseEnd?: string;
+        chapter?: string | null;
+        verseStart?: string | null;
+        verseEnd?: string | null;
     };
     role: 'hero' | 'inline' | 'background' | 'gallery';
 }
 
 interface ReaderProps {
-    artwork?: ScriptureArtwork | null;
+    artworks?: ScriptureArtwork[];
 }
 
 type ReadingItem =
@@ -51,12 +51,6 @@ type ReadingItem =
 
 const sourceUrl = '/bibles/oeb/43-John.usfm.db';
 const preferencesKey = 'bible-reader:oeb-preferences';
-const fallbackArtwork = {
-    imageUrl: '/images/scripture/john-olive-branch.png',
-    altText:
-        'A vintage botanical study of an olive branch with dark green leaves and ripe olives on aged parchment.',
-    focalPoint: { x: 66, y: 42 },
-};
 const newTestamentBooks = [
     'Matthew',
     'Mark',
@@ -312,7 +306,7 @@ function Library({ close }: { close?: () => void }) {
     );
 }
 
-export default function Reader({ artwork }: ReaderProps) {
+export default function Reader({ artworks = [] }: ReaderProps) {
     const [source, setSource] = useState<string>();
     const [loadError, setLoadError] = useState<string>();
     const [chapter, setChapter] = useState('1');
@@ -366,8 +360,15 @@ export default function Reader({ artwork }: ReaderProps) {
         [document, chapter],
     );
     const chapterIndex = chapters.indexOf(chapter);
-    const image = artwork ?? fallbackArtwork;
-    const imagePosition = `${image.focalPoint?.x ?? 50}% ${image.focalPoint?.y ?? 50}%`;
+    const chapterArtwork = useMemo(
+        () =>
+            artworks.find((item) => item.reference.chapter === chapter) ??
+            artworks.find((item) => item.reference.chapter == null),
+        [artworks, chapter],
+    );
+    const imagePosition = chapterArtwork
+        ? `${chapterArtwork.focalPoint?.x ?? 50}% ${chapterArtwork.focalPoint?.y ?? 50}%`
+        : undefined;
     const updatePreference = <Key extends keyof OebVariantOptions>(
         key: Key,
         value: OebVariantOptions[Key],
@@ -408,12 +409,23 @@ export default function Reader({ artwork }: ReaderProps) {
                 </header>
 
                 <section className="relative h-[30rem] overflow-hidden lg:h-[25.5rem]">
-                    <img
-                        src={image.imageUrl}
-                        alt={image.altText}
-                        className="absolute inset-0 size-full object-cover"
-                        style={{ objectPosition: imagePosition }}
-                    />
+                    {chapterArtwork ? (
+                        <img
+                            src={chapterArtwork.imageUrl}
+                            alt={chapterArtwork.altText}
+                            className="absolute inset-0 size-full object-cover"
+                            style={{ objectPosition: imagePosition }}
+                        />
+                    ) : (
+                        <div
+                            aria-hidden="true"
+                            className="absolute inset-0 bg-[#d9c9a9]"
+                            style={{
+                                backgroundImage:
+                                    'radial-gradient(circle at 78% 22%, rgba(49, 69, 54, 0.76), transparent 27%), radial-gradient(circle at 67% 78%, rgba(118, 105, 65, 0.54), transparent 34%), linear-gradient(118deg, #f2e5cd 0%, #d8c7a5 48%, #74806a 100%)',
+                            }}
+                        />
+                    )}
                     <div className="absolute inset-0 bg-gradient-to-r from-[#f5ead5]/95 via-[#f5ead5]/38 to-transparent" />
                     <div className="absolute inset-x-0 bottom-14 z-10 px-7 sm:px-12 lg:bottom-12 lg:px-[3.4rem]">
                         <p className="max-w-52 text-[0.72rem] font-semibold tracking-[0.3em] uppercase">

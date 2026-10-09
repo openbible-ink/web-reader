@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\ScriptureArtwork;
+use App\Models\ScriptureArtworkPassage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -10,38 +10,35 @@ class ReaderController extends Controller
 {
     public function __invoke(): Response
     {
-        $artwork = ScriptureArtwork::query()
-            ->whereHas('passages', fn ($query) => $query
-                ->where('book_code', 'JHN')
-                ->where('role', 'hero'))
-            ->with(['passages' => fn ($query) => $query
-                ->where('book_code', 'JHN')
-                ->where('role', 'hero')
-                ->orderBy('sort_order')])
-            ->first();
+        $placements = ScriptureArtworkPassage::query()
+            ->with('artwork')
+            ->where('book_code', 'JHN')
+            ->where('role', 'hero')
+            ->orderBy('sort_order')
+            ->get();
 
         return Inertia::render('reader', [
-            'artwork' => $artwork ? [
-                'id' => $artwork->id,
-                'imageUrl' => asset($artwork->image_path),
-                'title' => $artwork->title,
-                'altText' => $artwork->alt_text,
-                'caption' => $artwork->caption,
-                'approach' => $artwork->approach,
-                'attribution' => $artwork->attribution,
-                'license' => $artwork->license,
+            'artworks' => $placements->map(fn (ScriptureArtworkPassage $placement) => [
+                'id' => $placement->artwork->id,
+                'imageUrl' => asset($placement->artwork->image_path),
+                'title' => $placement->artwork->title,
+                'altText' => $placement->artwork->alt_text,
+                'caption' => $placement->artwork->caption,
+                'approach' => $placement->artwork->approach,
+                'attribution' => $placement->artwork->attribution,
+                'license' => $placement->artwork->license,
                 'focalPoint' => [
-                    'x' => $artwork->focal_point_x,
-                    'y' => $artwork->focal_point_y,
+                    'x' => $placement->artwork->focal_point_x,
+                    'y' => $placement->artwork->focal_point_y,
                 ],
                 'reference' => [
-                    'book' => $artwork->passages->first()?->book_code,
-                    'chapter' => $artwork->passages->first()?->chapter,
-                    'verseStart' => $artwork->passages->first()?->verse_start,
-                    'verseEnd' => $artwork->passages->first()?->verse_end,
+                    'book' => $placement->book_code,
+                    'chapter' => $placement->chapter,
+                    'verseStart' => $placement->verse_start,
+                    'verseEnd' => $placement->verse_end,
                 ],
-                'role' => $artwork->passages->first()?->role,
-            ] : null,
+                'role' => $placement->role,
+            ])->values(),
         ]);
     }
 }

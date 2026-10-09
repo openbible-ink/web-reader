@@ -41,12 +41,14 @@ class DatabaseSeeder extends Seeder
         $johnArtwork->passages()->updateOrCreate(
             [
                 'book_code' => 'JHN',
-                'chapter' => null,
+                'role' => 'hero',
+                'sort_order' => 0,
+            ],
+            [
+                'chapter' => '1',
                 'verse_start' => null,
                 'verse_end' => null,
-                'role' => 'hero',
             ],
-            ['sort_order' => 0],
         );
     }
 }

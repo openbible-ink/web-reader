@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $verse_start
  * @property string|null $verse_end
  * @property string $role
+ * @property-read ScriptureArtwork $artwork
  */
 class ScriptureArtworkPassage extends Model
 {

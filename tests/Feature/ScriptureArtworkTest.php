@@ -24,6 +24,7 @@ class ScriptureArtworkTest extends TestCase
 
         $artwork->passages()->create([
             'book_code' => 'JHN',
+            'chapter' => '1',
             'role' => 'hero',
         ]);
 
@@ -31,10 +32,21 @@ class ScriptureArtworkTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('reader')
-                ->where('artwork.id', $artwork->id)
-                ->where('artwork.reference.book', 'JHN')
-                ->where('artwork.role', 'hero')
-                ->where('artwork.focalPoint.x', 66)
-                ->where('artwork.focalPoint.y', 42));
+                ->has('artworks', 1)
+                ->where('artworks.0.id', $artwork->id)
+                ->where('artworks.0.reference.book', 'JHN')
+                ->where('artworks.0.reference.chapter', '1')
+                ->where('artworks.0.role', 'hero')
+                ->where('artworks.0.focalPoint.x', 66)
+                ->where('artworks.0.focalPoint.y', 42));
+    }
+
+    public function test_reader_has_no_artwork_fallback_when_no_placement_matches(): void
+    {
+        $this->get(route('home'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('reader')
+                ->has('artworks', 0));
     }
 }
