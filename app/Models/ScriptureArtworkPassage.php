@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * @property string $book_code
+ * @property string|null $edition_id
+ * @property string|null $versification
  * @property string|null $chapter
  * @property string|null $verse_start
  * @property string|null $verse_end
@@ -17,6 +19,8 @@ class ScriptureArtworkPassage extends Model
 {
     protected $fillable = [
         'artwork_id',
+        'edition_id',
+        'versification',
         'book_code',
         'chapter',
         'verse_start',
@@ -29,5 +33,11 @@ class ScriptureArtworkPassage extends Model
     public function artwork(): BelongsTo
     {
         return $this->belongsTo(ScriptureArtwork::class, 'artwork_id');
+    }
+
+    /** @return BelongsTo<BibleEdition, $this> */
+    public function edition(): BelongsTo
+    {
+        return $this->belongsTo(BibleEdition::class, 'edition_id');
     }
 }

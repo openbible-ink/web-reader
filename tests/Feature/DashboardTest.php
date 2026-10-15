@@ -2,8 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Models\BibleBook;
+use App\Models\BibleEdition;
+use App\Models\Bookmark;
+use App\Models\Highlight;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class DashboardTest extends TestCase
@@ -23,5 +28,51 @@ class DashboardTest extends TestCase
 
         $response = $this->get(route('dashboard'));
         $response->assertOk();
+    }
+
+    public function test_dashboard_shows_the_users_recent_bookmarks(): void
+    {
+        $user = User::factory()->create();
+        $edition = BibleEdition::query()->create([
+            'slug' => 'oeb',
+            'name' => 'Open English Bible',
+            'abbreviation' => 'OEB',
+            'language' => 'en',
+            'source_format' => 'usfm',
+        ]);
+        $book = BibleBook::query()->create([
+            'edition_id' => $edition->id,
+            'book_code' => 'JHN',
+            'name' => 'John',
+            'source_path' => '/bibles/oeb/43-John.usfm.db',
+            'chapter_count' => 21,
+        ]);
+        $bookmark = Bookmark::query()->create([
+            'user_id' => $user->id,
+            'bible_book_id' => $book->id,
+            'chapter' => '1',
+            'verse_start' => '35',
+            'verse_end' => '51',
+            'title' => 'Calling the disciples',
+        ]);
+        Highlight::query()->create([
+            'user_id' => $user->id,
+            'bible_book_id' => $book->id,
+            'chapter' => '1',
+            'color' => 'green',
+            'selected_text' => 'Follow me',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('dashboard')
+                ->where('bookmarkCount', 1)
+                ->where('highlightCount', 1)
+                ->has('bookmarks', 1)
+                ->where('bookmarks.0.title', 'Calling the disciples')
+                ->where('bookmarks.0.reference', 'John 1:35–51')
+                ->where('bookmarks.0.readerUrl', "/read/oeb/JHN/1?bookmark={$bookmark->id}"));
     }
 }

@@ -27,7 +27,7 @@ class RegistrationTest extends TestCase
     public function test_new_users_can_register()
     {
         $response = $this->post(route('register.store'), [
-            'name' => 'Test User',
+            'username' => 'test_user',
             'email' => 'test@example.com',
             'password' => 'password',
             'password_confirmation' => 'password',
@@ -35,5 +35,25 @@ class RegistrationTest extends TestCase
 
         $this->assertAuthenticated();
         $response->assertRedirect(route('dashboard', absolute: false));
+        $this->assertDatabaseHas('users', [
+            'username' => 'test_user',
+            'name' => 'test_user',
+            'email' => 'test@example.com',
+        ]);
+    }
+
+    public function test_usernames_are_normalized_and_must_be_unique(): void
+    {
+        \App\Models\User::factory()->create(['username' => 'reader_one']);
+
+        $response = $this->post(route('register.store'), [
+            'username' => 'Reader_One',
+            'email' => 'another@example.com',
+            'password' => 'password',
+            'password_confirmation' => 'password',
+        ]);
+
+        $response->assertSessionHasErrors('username');
+        $this->assertGuest();
     }
 }

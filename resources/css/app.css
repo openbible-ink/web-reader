@@ -141,3 +141,23 @@
         @apply bg-background text-foreground;
     }
 }
+
+::highlight(open-bible-yellow) {
+    background-color: rgb(232 201 104 / 58%);
+    color: inherit;
+}
+
+::highlight(open-bible-green) {
+    background-color: rgb(159 189 146 / 58%);
+    color: inherit;
+}
+
+::highlight(open-bible-blue) {
+    background-color: rgb(145 184 203 / 58%);
+    color: inherit;
+}
+
+::highlight(open-bible-rose) {
+    background-color: rgb(216 160 160 / 58%);
+    color: inherit;
+}

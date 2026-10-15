@@ -30,9 +30,16 @@
             }
         </style>
 
+        <meta name="theme-color" content="#f4efe5" media="(prefers-color-scheme: light)">
+        <meta name="theme-color" content="#211f1b" media="(prefers-color-scheme: dark)">
+        <meta name="apple-mobile-web-app-title" content="Open Bible">
+
         <link rel="icon" href="/favicon.ico" sizes="any">
-        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+        <link rel="icon" href="/favicon-16x16.png" type="image/png" sizes="16x16">
+        <link rel="icon" href="/favicon-32x32.png" type="image/png" sizes="32x32" media="(prefers-color-scheme: light)">
+        <link rel="icon" href="/favicon-dark-32x32.png" type="image/png" sizes="32x32" media="(prefers-color-scheme: dark)">
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180">
+        <link rel="manifest" href="/site.webmanifest">
 
         @fonts
 
