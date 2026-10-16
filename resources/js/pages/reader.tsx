@@ -769,6 +769,8 @@ export default function Reader({
     const outlineRef = useRef<HTMLDivElement>(null);
     const bookmarkRef = useRef<HTMLDivElement>(null);
     const highlightRef = useRef<HTMLDivElement>(null);
+    const heroArtworkRef = useRef<HTMLDivElement>(null);
+    const heroTextRef = useRef<HTMLDivElement>(null);
     const readerArticleRef = useRef<HTMLElement>(null);
 
     useEffect(() => {
@@ -994,6 +996,57 @@ export default function Reader({
     const imagePosition = chapterArtwork
         ? `${chapterArtwork.focalPoint?.x ?? 50}% ${chapterArtwork.focalPoint?.y ?? 50}%`
         : undefined;
+    useEffect(() => {
+        const artwork = heroArtworkRef.current;
+        const text = heroTextRef.current;
+        if (!artwork && !text) return;
+
+        const reducedMotion = window.matchMedia(
+            '(prefers-reduced-motion: reduce)',
+        );
+        let animationFrame: number | undefined;
+
+        const update = () => {
+            animationFrame = undefined;
+            if (reducedMotion.matches) {
+                if (artwork) artwork.style.transform = '';
+                if (text) text.style.transform = '';
+                return;
+            }
+
+            const banner = (artwork ?? text)?.parentElement;
+            if (!banner) return;
+            const distance = Math.min(
+                Math.max(0, -banner.getBoundingClientRect().top),
+                banner.offsetHeight * 1.25,
+            );
+            if (artwork) {
+                artwork.style.transform = `translate3d(0, ${distance * 0.52}px, 0)`;
+            }
+            if (text) {
+                text.style.transform = `translate3d(0, ${distance * 0.24}px, 0)`;
+            }
+        };
+
+        const scheduleUpdate = () => {
+            if (animationFrame !== undefined) return;
+            animationFrame = window.requestAnimationFrame(update);
+        };
+
+        scheduleUpdate();
+        window.addEventListener('scroll', scheduleUpdate, { passive: true });
+        window.addEventListener('resize', scheduleUpdate);
+        reducedMotion.addEventListener('change', scheduleUpdate);
+
+        return () => {
+            window.removeEventListener('scroll', scheduleUpdate);
+            window.removeEventListener('resize', scheduleUpdate);
+            reducedMotion.removeEventListener('change', scheduleUpdate);
+            if (animationFrame !== undefined) {
+                window.cancelAnimationFrame(animationFrame);
+            }
+        };
+    }, [chapterArtwork]);
     const updatePreference = <Key extends keyof OebVariantOptions>(
         key: Key,
         value: OebVariantOptions[Key],
@@ -1417,12 +1470,17 @@ export default function Reader({
 
                 <section className="relative h-[30rem] overflow-hidden lg:h-[25.5rem]">
                     {chapterArtwork ? (
-                        <img
-                            src={chapterArtwork.imageUrl}
-                            alt={chapterArtwork.altText}
-                            className="absolute inset-0 size-full object-cover"
-                            style={{ objectPosition: imagePosition }}
-                        />
+                        <div
+                            ref={heroArtworkRef}
+                            className="absolute inset-x-0 -top-[18%] -bottom-[18%] will-change-transform"
+                        >
+                            <img
+                                src={chapterArtwork.imageUrl}
+                                alt={chapterArtwork.altText}
+                                className="size-full object-cover"
+                                style={{ objectPosition: imagePosition }}
+                            />
+                        </div>
                     ) : (
                         <div
                             aria-hidden="true"
@@ -1434,7 +1492,10 @@ export default function Reader({
                         />
                     )}
                     <div className="absolute inset-0 bg-gradient-to-r from-[#f5ead5]/95 via-[#f5ead5]/38 to-transparent" />
-                    <div className="absolute inset-x-0 bottom-14 z-10 px-7 sm:px-12 lg:bottom-12 lg:px-[3.4rem]">
+                    <div
+                        ref={heroTextRef}
+                        className="absolute inset-x-0 bottom-14 z-10 px-7 will-change-transform sm:px-12 lg:bottom-12 lg:px-[3.4rem]"
+                    >
                         <p className="max-w-52 text-[0.72rem] font-semibold tracking-[0.3em] uppercase">
                             {longNamePrefix ?? book.name}
                         </p>
