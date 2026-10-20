@@ -47,6 +47,12 @@ class User extends Authenticatable implements PasskeyUser
         return $this->hasMany(Highlight::class);
     }
 
+    /** @return HasMany<Note, $this> */
+    public function notes(): HasMany
+    {
+        return $this->hasMany(Note::class);
+    }
+
     /**
      * Get the attributes that should be cast.
      *

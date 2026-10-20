@@ -6,6 +6,7 @@ use App\Models\BibleBook;
 use App\Models\BibleEdition;
 use App\Models\Bookmark;
 use App\Models\Highlight;
+use App\Models\Note;
 use App\Models\ScriptureArtworkPassage;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -26,6 +27,18 @@ class ReaderController extends Controller
                 ->where('chapter', $chapter)
                 ->firstOrFail();
         }
+
+        $focusedNoteId = null;
+        if ($request->filled('note')) {
+            abort_unless($request->user(), 404);
+            $focusedNoteId = $request->user()->notes()
+                ->whereKey($request->string('note')->toString())
+                ->where('bible_book_id', $book->id)
+                ->where('chapter', $chapter)
+                ->value('id');
+            abort_unless($focusedNoteId, 404);
+        }
+        $focusedNoteExpanded = (bool) $focusedNoteId && $request->boolean('fullscreen');
 
         $placements = ScriptureArtworkPassage::query()
             ->with('artwork')
@@ -102,6 +115,36 @@ class ReaderController extends Controller
                         'color' => $highlight->color,
                         'selectedText' => $highlight->selected_text,
                         'segments' => $highlight->segments->map(fn ($segment) => [
+                            'verse' => $segment->verse,
+                            'startOffset' => $segment->start_offset,
+                            'endOffset' => $segment->end_offset,
+                            'exactText' => $segment->exact_text,
+                            'prefix' => $segment->prefix,
+                            'suffix' => $segment->suffix,
+                        ])->values(),
+                    ])
+                    ->values()
+                : [],
+            'focusedNoteId' => $focusedNoteId,
+            'focusedNoteExpanded' => $focusedNoteExpanded,
+            'notes' => $request->user()
+                ? $request->user()->notes()
+                    ->with('segments')
+                    ->where('bible_book_id', $book->id)
+                    ->where('chapter', $chapter)
+                    ->oldest()
+                    ->get()
+                    ->map(fn (Note $note) => [
+                        'id' => $note->id,
+                        'title' => $note->title,
+                        'bodyMarkdown' => $note->body_markdown,
+                        'anchorType' => $note->anchor_type,
+                        'selectedText' => $note->selected_text,
+                        'sectionKey' => $note->section_key,
+                        'sectionTitle' => $note->section_title,
+                        'verseStart' => $note->verse_start,
+                        'verseEnd' => $note->verse_end,
+                        'segments' => $note->segments->map(fn ($segment) => [
                             'verse' => $segment->verse,
                             'startOffset' => $segment->start_offset,
                             'endOffset' => $segment->end_offset,

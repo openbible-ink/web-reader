@@ -62,4 +62,10 @@ class BibleBook extends Model
     {
         return $this->hasMany(Highlight::class, 'bible_book_id');
     }
+
+    /** @return HasMany<Note, $this> */
+    public function notes(): HasMany
+    {
+        return $this->hasMany(Note::class, 'bible_book_id');
+    }
 }

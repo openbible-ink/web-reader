@@ -29,17 +29,19 @@ const navigation = [
     { label: 'Library', icon: BookOpen, href: '/books/oeb/JHN' },
     { label: 'Search', icon: Search, href: '/search' },
     { label: 'Plans', icon: CalendarDays, href: '#plans' },
-    { label: 'Notes', icon: FileText, href: '#saved-items' },
+    { label: 'Notes', icon: FileText, href: '/notes' },
     { label: 'Highlights', icon: Highlighter, href: '/highlights' },
     { label: 'Bookmarks', icon: Bookmark, href: '/bookmarks' },
     { label: 'Account', icon: UserRound, href: '#account', active: true },
 ];
 
 const savedTabs = [
-    { label: 'Bookmarks', icon: Bookmark, active: true },
+    { label: 'Bookmarks', icon: Bookmark },
     { label: 'Highlights', icon: Highlighter },
     { label: 'Notes', icon: FileText },
-];
+] as const;
+
+type SavedTab = (typeof savedTabs)[number]['label'];
 
 interface DashboardBookmark {
     id: string;
@@ -52,9 +54,41 @@ interface DashboardBookmark {
 
 interface DashboardProps {
     bookmarks: DashboardBookmark[];
+    highlights: DashboardHighlight[];
+    notes: DashboardNote[];
     bookmarkCount: number;
     highlightCount: number;
+    noteCount: number;
 }
+
+interface DashboardHighlight {
+    id: string;
+    selectedText: string;
+    color: 'yellow' | 'green' | 'blue' | 'rose';
+    reference: string;
+    edition: string;
+    readerUrl: string;
+    createdAt?: string | null;
+}
+
+interface DashboardNote {
+    id: string;
+    title: string;
+    bodyMarkdown: string;
+    reference: string;
+    edition: string;
+    readerUrl: string;
+    noteUrl: string;
+    editUrl: string;
+    updatedAt?: string | null;
+}
+
+const highlightColours: Record<DashboardHighlight['color'], string> = {
+    yellow: '#e7c862',
+    green: '#8eaa82',
+    blue: '#82a9bf',
+    rose: '#c78d90',
+};
 
 function Panel({
     children,
@@ -139,12 +173,16 @@ function DashboardSidebar({ close }: { close?: () => void }) {
 
 export default function Dashboard({
     bookmarks,
+    highlights,
+    notes,
     bookmarkCount,
     highlightCount,
+    noteCount,
 }: DashboardProps) {
     const { auth } = usePage().props;
     const { appearance, resolvedAppearance } = useAppearance();
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
+    const [savedTab, setSavedTab] = useState<SavedTab>('Bookmarks');
     const user = auth.user;
     const themeLabel =
         appearance === 'system'
@@ -155,8 +193,14 @@ export default function Dashboard({
         { label: 'Passages read', value: 0, icon: BookOpen },
         { label: 'Highlights', value: highlightCount, icon: Highlighter },
         { label: 'Bookmarks', value: bookmarkCount, icon: Bookmark },
-        { label: 'Notes', value: 0, icon: FileText },
+        { label: 'Notes', value: noteCount, icon: FileText },
     ];
+    const savedItemsUrl =
+        savedTab === 'Bookmarks'
+            ? '/bookmarks'
+            : savedTab === 'Highlights'
+              ? '/highlights'
+              : '/notes';
 
     return (
         <>
@@ -310,25 +354,39 @@ export default function Dashboard({
                                 <Panel id="saved-items" className="p-6 sm:p-7">
                                     <SectionHeading
                                         action={
-                                            <Link
-                                                href="/bookmarks"
-                                                className="flex items-center gap-1 rounded-md px-2 py-1 font-serif text-sm text-[#71695e] hover:bg-[#eee5d8] hover:text-[#181914] focus-visible:ring-2 focus-visible:ring-[#9a672d] focus-visible:outline-none"
-                                            >
-                                                See all
-                                                <ChevronRight className="size-4" />
-                                            </Link>
+                                            savedItemsUrl ? (
+                                                <Link
+                                                    href={savedItemsUrl}
+                                                    className="flex items-center gap-1 rounded-md px-2 py-1 font-serif text-sm text-[#71695e] hover:bg-[#eee5d8] hover:text-[#181914] focus-visible:ring-2 focus-visible:ring-[#9a672d] focus-visible:outline-none"
+                                                >
+                                                    See all
+                                                    <ChevronRight className="size-4" />
+                                                </Link>
+                                            ) : null
                                         }
                                     >
                                         Saved items
                                     </SectionHeading>
-                                    <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+                                    <div
+                                        role="tablist"
+                                        aria-label="Saved item type"
+                                        className="mt-4 flex gap-2 overflow-x-auto pb-1"
+                                    >
                                         {savedTabs.map(
-                                            ({ label, icon: Icon, active }) => (
+                                            ({ label, icon: Icon }) => (
                                                 <button
                                                     key={label}
                                                     type="button"
-                                                    className={`flex shrink-0 items-center gap-2 rounded-xl px-5 py-2.5 font-serif text-sm transition ${
-                                                        active
+                                                    role="tab"
+                                                    aria-selected={
+                                                        savedTab === label
+                                                    }
+                                                    aria-controls="saved-items-panel"
+                                                    onClick={() =>
+                                                        setSavedTab(label)
+                                                    }
+                                                    className={`flex shrink-0 cursor-pointer items-center gap-2 rounded-xl px-5 py-2.5 font-serif text-sm transition focus-visible:ring-2 focus-visible:ring-[#9a672d] focus-visible:outline-none ${
+                                                        savedTab === label
                                                             ? 'bg-[#1d1e1a] text-[#fffaf1]'
                                                             : 'bg-[#eee6da] hover:bg-[#e6dccd]'
                                                     }`}
@@ -339,54 +397,221 @@ export default function Dashboard({
                                             ),
                                         )}
                                     </div>
-                                    {bookmarks.length ? (
-                                        <div className="mt-5 divide-y divide-[#e1d9ce] border-y border-[#e1d9ce]">
-                                            {bookmarks.map((bookmark) => (
-                                                <Link
-                                                    key={bookmark.id}
-                                                    href={bookmark.readerUrl}
-                                                    className="group flex items-center gap-4 px-1 py-4 transition hover:bg-[#faf6ef] focus-visible:ring-2 focus-visible:ring-[#9a672d] focus-visible:outline-none sm:px-2"
-                                                >
-                                                    <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[#eee5d8] text-[#755b34]">
-                                                        <Bookmark className="size-5 fill-current stroke-[1.4]" />
-                                                    </span>
-                                                    <div className="min-w-0 flex-1 font-serif">
-                                                        <p className="truncate text-lg text-[#20211d]">
-                                                            {bookmark.title ||
-                                                                bookmark.reference}
-                                                        </p>
-                                                        <p className="mt-0.5 truncate text-sm text-[#817a70]">
-                                                            {bookmark.reference}{' '}
-                                                            · {bookmark.edition}
-                                                        </p>
-                                                    </div>
-                                                    {bookmark.createdAt && (
-                                                        <span className="hidden shrink-0 font-serif text-xs text-[#928a7e] sm:block">
-                                                            {bookmark.createdAt}
-                                                        </span>
+                                    <div
+                                        id="saved-items-panel"
+                                        role="tabpanel"
+                                        className="mt-5"
+                                    >
+                                        {savedTab === 'Bookmarks' &&
+                                            (bookmarks.length ? (
+                                                <div className="divide-y divide-[#e1d9ce] border-y border-[#e1d9ce]">
+                                                    {bookmarks.map(
+                                                        (bookmark) => (
+                                                            <Link
+                                                                key={
+                                                                    bookmark.id
+                                                                }
+                                                                href={
+                                                                    bookmark.readerUrl
+                                                                }
+                                                                className="group flex items-center gap-4 px-1 py-4 transition hover:bg-[#faf6ef] focus-visible:ring-2 focus-visible:ring-[#9a672d] focus-visible:outline-none sm:px-2"
+                                                            >
+                                                                <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[#eee5d8] text-[#755b34]">
+                                                                    <Bookmark className="size-5 fill-current stroke-[1.4]" />
+                                                                </span>
+                                                                <div className="min-w-0 flex-1 font-serif">
+                                                                    <p className="truncate text-lg text-[#20211d]">
+                                                                        {bookmark.title ||
+                                                                            bookmark.reference}
+                                                                    </p>
+                                                                    <p className="mt-0.5 truncate text-sm text-[#817a70]">
+                                                                        {
+                                                                            bookmark.reference
+                                                                        }{' '}
+                                                                        ·{' '}
+                                                                        {
+                                                                            bookmark.edition
+                                                                        }
+                                                                    </p>
+                                                                </div>
+                                                                {bookmark.createdAt && (
+                                                                    <span className="hidden shrink-0 font-serif text-xs text-[#928a7e] sm:block">
+                                                                        {
+                                                                            bookmark.createdAt
+                                                                        }
+                                                                    </span>
+                                                                )}
+                                                                <ChevronRight className="size-4 shrink-0 text-[#8c8377] transition group-hover:translate-x-0.5" />
+                                                            </Link>
+                                                        ),
                                                     )}
-                                                    <ChevronRight className="size-4 shrink-0 text-[#8c8377] transition group-hover:translate-x-0.5" />
-                                                </Link>
+                                                </div>
+                                            ) : (
+                                                <div className="flex min-h-52 flex-col items-center justify-center rounded-xl border border-dashed border-[#d9d0c4] bg-[#faf6ef]/55 px-6 text-center">
+                                                    <Bookmark className="size-8 stroke-[#9b825d] stroke-[1.25]" />
+                                                    <h3 className="mt-3 font-serif text-lg">
+                                                        No bookmarks yet
+                                                    </h3>
+                                                    <p className="mt-1 max-w-sm font-serif text-sm leading-6 text-[#827b71]">
+                                                        Save a passage from the
+                                                        reader and it will
+                                                        appear here.
+                                                    </p>
+                                                    <Link
+                                                        href="/read/oeb/JHN/1"
+                                                        className="mt-4 rounded-full bg-[#ede4d6] px-5 py-2 font-serif text-sm hover:bg-[#e2d5c3]"
+                                                    >
+                                                        Start reading
+                                                    </Link>
+                                                </div>
                                             ))}
-                                        </div>
-                                    ) : (
-                                        <div className="mt-5 flex min-h-52 flex-col items-center justify-center rounded-xl border border-dashed border-[#d9d0c4] bg-[#faf6ef]/55 px-6 text-center">
-                                            <Bookmark className="size-8 stroke-[#9b825d] stroke-[1.25]" />
-                                            <h3 className="mt-3 font-serif text-lg">
-                                                No bookmarks yet
-                                            </h3>
-                                            <p className="mt-1 max-w-sm font-serif text-sm leading-6 text-[#827b71]">
-                                                Save a passage from the reader
-                                                and it will appear here.
-                                            </p>
-                                            <Link
-                                                href="/read/oeb/JHN/1"
-                                                className="mt-4 rounded-full bg-[#ede4d6] px-5 py-2 font-serif text-sm hover:bg-[#e2d5c3]"
-                                            >
-                                                Start reading
-                                            </Link>
-                                        </div>
-                                    )}
+                                        {savedTab === 'Highlights' &&
+                                            (highlights.length ? (
+                                                <div className="divide-y divide-[#e1d9ce] border-y border-[#e1d9ce]">
+                                                    {highlights.map(
+                                                        (highlight) => (
+                                                            <Link
+                                                                key={
+                                                                    highlight.id
+                                                                }
+                                                                href={
+                                                                    highlight.readerUrl
+                                                                }
+                                                                className="group flex items-center gap-4 px-1 py-4 transition hover:bg-[#faf6ef] focus-visible:ring-2 focus-visible:ring-[#9a672d] focus-visible:outline-none sm:px-2"
+                                                            >
+                                                                <span
+                                                                    className="grid size-11 shrink-0 place-items-center rounded-xl bg-[#eee5d8]"
+                                                                    style={{
+                                                                        color: highlightColours[
+                                                                            highlight
+                                                                                .color
+                                                                        ],
+                                                                    }}
+                                                                >
+                                                                    <Highlighter className="size-5 fill-current stroke-[1.2]" />
+                                                                </span>
+                                                                <div className="min-w-0 flex-1 font-serif">
+                                                                    <p className="truncate text-lg text-[#20211d]">
+                                                                        “
+                                                                        {
+                                                                            highlight.selectedText
+                                                                        }
+                                                                        ”
+                                                                    </p>
+                                                                    <p className="mt-0.5 truncate text-sm text-[#817a70]">
+                                                                        {
+                                                                            highlight.reference
+                                                                        }{' '}
+                                                                        ·{' '}
+                                                                        {
+                                                                            highlight.edition
+                                                                        }
+                                                                    </p>
+                                                                </div>
+                                                                {highlight.createdAt && (
+                                                                    <span className="hidden shrink-0 font-serif text-xs text-[#928a7e] sm:block">
+                                                                        {
+                                                                            highlight.createdAt
+                                                                        }
+                                                                    </span>
+                                                                )}
+                                                                <ChevronRight className="size-4 shrink-0 text-[#8c8377] transition group-hover:translate-x-0.5" />
+                                                            </Link>
+                                                        ),
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <div className="flex min-h-52 flex-col items-center justify-center rounded-xl border border-dashed border-[#d9d0c4] bg-[#faf6ef]/55 px-6 text-center">
+                                                    <Highlighter className="size-8 stroke-[#9b825d] stroke-[1.25]" />
+                                                    <h3 className="mt-3 font-serif text-lg">
+                                                        No highlights yet
+                                                    </h3>
+                                                    <p className="mt-1 max-w-sm font-serif text-sm leading-6 text-[#827b71]">
+                                                        Select words in the
+                                                        reader and choose a
+                                                        colour to save a
+                                                        highlight.
+                                                    </p>
+                                                </div>
+                                            ))}
+                                        {savedTab === 'Notes' &&
+                                            (notes.length ? (
+                                                <div className="divide-y divide-[#e1d9ce] border-y border-[#e1d9ce]">
+                                                    {notes.map((note) => (
+                                                        <article
+                                                            key={note.id}
+                                                            className="group flex items-center gap-2 px-1 py-1 transition hover:bg-[#faf6ef] sm:px-2"
+                                                        >
+                                                            <Link
+                                                                href={
+                                                                    note.noteUrl
+                                                                }
+                                                                className="flex min-w-0 flex-1 items-center gap-4 rounded-lg py-3 focus-visible:ring-2 focus-visible:ring-[#9a672d] focus-visible:outline-none"
+                                                            >
+                                                                <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[#eee5d8] text-[#755b34]">
+                                                                    <FileText className="size-5 stroke-[1.4]" />
+                                                                </span>
+                                                                <div className="min-w-0 flex-1 font-serif">
+                                                                    <p className="truncate text-lg text-[#20211d]">
+                                                                        {
+                                                                            note.title
+                                                                        }
+                                                                    </p>
+                                                                    <p className="mt-0.5 truncate text-sm text-[#817a70]">
+                                                                        {
+                                                                            note.reference
+                                                                        }{' '}
+                                                                        ·{' '}
+                                                                        {
+                                                                            note.edition
+                                                                        }
+                                                                    </p>
+                                                                </div>
+                                                                {note.updatedAt && (
+                                                                    <span className="hidden shrink-0 font-serif text-xs text-[#928a7e] sm:block">
+                                                                        {
+                                                                            note.updatedAt
+                                                                        }
+                                                                    </span>
+                                                                )}
+                                                                <ChevronRight className="size-4 shrink-0 text-[#8c8377] transition group-hover:translate-x-0.5" />
+                                                            </Link>
+                                                            <Link
+                                                                href={
+                                                                    note.editUrl
+                                                                }
+                                                                aria-label={`Edit ${note.title}`}
+                                                                className="inline-flex shrink-0 items-center gap-2 rounded-full px-3 py-2 font-serif text-sm text-[#6f6559] hover:bg-[#eee5d8] hover:text-[#211f1b] focus-visible:ring-2 focus-visible:ring-[#9a672d] focus-visible:outline-none"
+                                                            >
+                                                                <Pencil className="size-4" />
+                                                                <span className="hidden lg:inline">
+                                                                    Edit
+                                                                </span>
+                                                            </Link>
+                                                        </article>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="flex min-h-52 flex-col items-center justify-center rounded-xl border border-dashed border-[#d9d0c4] bg-[#faf6ef]/55 px-6 text-center">
+                                                    <FileText className="size-8 stroke-[#9b825d] stroke-[1.25]" />
+                                                    <h3 className="mt-3 font-serif text-lg">
+                                                        No notes yet
+                                                    </h3>
+                                                    <p className="mt-1 max-w-sm font-serif text-sm leading-6 text-[#827b71]">
+                                                        Add a note beside a
+                                                        verse or section, or
+                                                        attach one to selected
+                                                        text.
+                                                    </p>
+                                                    <Link
+                                                        href="/read/oeb/JHN/1"
+                                                        className="mt-4 rounded-full bg-[#ede4d6] px-5 py-2 font-serif text-sm hover:bg-[#e2d5c3]"
+                                                    >
+                                                        Start reading
+                                                    </Link>
+                                                </div>
+                                            ))}
+                                    </div>
                                 </Panel>
                             </div>
 

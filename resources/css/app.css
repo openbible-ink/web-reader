@@ -41,6 +41,10 @@
     --color-destructive: var(--destructive);
     --color-destructive-foreground: var(--destructive-foreground);
 
+    --color-positive: var(--positive);
+    --color-positive-hover: var(--positive-hover);
+    --color-positive-foreground: var(--positive-foreground);
+
     --color-border: var(--border);
     --color-input: var(--input);
     --color-ring: var(--ring);
@@ -61,6 +65,144 @@
     --color-sidebar-ring: var(--sidebar-ring);
 }
 
+.note-rich-editor .tiptap p.is-editor-empty:first-child::before {
+    color: rgb(120 113 108);
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    pointer-events: none;
+}
+
+.note-rich-editor h1,
+.note-rich-editor h2,
+.note-rich-editor h3 {
+    font-weight: 650;
+    line-height: 1.2;
+    margin: 1em 0 0.45em;
+}
+
+.note-rich-editor h1 {
+    font-size: 1.65em;
+}
+.note-rich-editor h2 {
+    font-size: 1.35em;
+}
+.note-rich-editor h3 {
+    font-size: 1.15em;
+}
+.note-rich-editor p {
+    margin: 0.55em 0;
+}
+.note-rich-editor ul {
+    list-style: disc;
+    padding-left: 1.5em;
+}
+.note-rich-editor ol {
+    list-style: decimal;
+    padding-left: 1.5em;
+}
+.note-rich-editor blockquote {
+    border-left: 2px solid #b66b36;
+    color: rgb(87 83 78);
+    font-style: italic;
+    margin: 0.8em 0;
+    padding-left: 1em;
+}
+.note-rich-editor a {
+    color: #8a4a24;
+    text-decoration: underline;
+}
+
+.note-article-prose .tiptap {
+    color: #37322c;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 1.12rem;
+    line-height: 1.9;
+}
+
+.note-article-prose .tiptap > * + * {
+    margin-top: 1.25em;
+}
+
+.note-article-prose h1,
+.note-article-prose h2,
+.note-article-prose h3 {
+    color: #1b1b18;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    line-height: 1.18;
+    margin-top: 1.7em;
+}
+
+.note-article-prose h1 {
+    font-size: 2.25rem;
+}
+
+.note-article-prose h2 {
+    font-size: 1.75rem;
+}
+
+.note-article-prose h3 {
+    font-size: 1.35rem;
+}
+
+.note-article-prose ul,
+.note-article-prose ol {
+    padding-left: 1.5em;
+}
+
+.note-article-prose ul {
+    list-style: disc;
+}
+
+.note-article-prose ol {
+    list-style: decimal;
+}
+
+.note-article-prose li + li {
+    margin-top: 0.45em;
+}
+
+.note-article-prose blockquote {
+    border-left: 3px solid #b66b36;
+    color: #655a4e;
+    font-size: 1.08em;
+    font-style: italic;
+    margin: 1.75em 0;
+    padding: 0.25em 0 0.25em 1.25em;
+}
+
+.note-article-prose a {
+    color: #7b4a25;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.18em;
+}
+
+.note-article-prose strong {
+    color: #201f1b;
+    font-weight: 650;
+}
+
+.note-card-action-separator {
+    opacity: 0.7;
+    transition: opacity 150ms ease;
+}
+
+.note-card-actions:has(.note-card-action:hover) .note-card-action-separator,
+.note-card-actions:has(.note-card-action:focus-visible)
+    .note-card-action-separator {
+    opacity: 0;
+}
+
+::highlight(open-bible-note-selection) {
+    text-decoration-color: var(--reader-accent);
+    text-decoration-line: underline;
+    text-decoration-style: dotted;
+    text-decoration-thickness: 1.5px;
+    text-underline-offset: 0.2em;
+}
+
 :root {
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
@@ -78,6 +220,9 @@
     --accent-foreground: oklch(0.205 0 0);
     --destructive: oklch(0.577 0.245 27.325);
     --destructive-foreground: oklch(0.577 0.245 27.325);
+    --positive: #506b4b;
+    --positive-hover: #40583c;
+    --positive-foreground: #fffdf8;
     --border: oklch(0.922 0 0);
     --input: oklch(0.922 0 0);
     --ring: oklch(0.87 0 0);
@@ -114,6 +259,9 @@
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.396 0.141 25.723);
     --destructive-foreground: oklch(0.637 0.237 25.331);
+    --positive: #6f9168;
+    --positive-hover: #80a578;
+    --positive-foreground: #172016;
     --border: oklch(0.269 0 0);
     --input: oklch(0.269 0 0);
     --ring: oklch(0.439 0 0);

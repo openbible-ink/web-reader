@@ -6,6 +6,7 @@ use App\Models\BibleBook;
 use App\Models\BibleEdition;
 use App\Models\Bookmark;
 use App\Models\Highlight;
+use App\Models\Note;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -55,12 +56,29 @@ class DashboardTest extends TestCase
             'verse_end' => '51',
             'title' => 'Calling the disciples',
         ]);
-        Highlight::query()->create([
+        $highlight = Highlight::query()->create([
             'user_id' => $user->id,
             'bible_book_id' => $book->id,
             'chapter' => '1',
             'color' => 'green',
             'selected_text' => 'Follow me',
+        ]);
+        $highlight->segments()->create([
+            'verse' => '43',
+            'start_offset' => 53,
+            'end_offset' => 62,
+            'exact_text' => 'Follow me',
+            'position' => 0,
+        ]);
+        $note = Note::query()->create([
+            'user_id' => $user->id,
+            'bible_book_id' => $book->id,
+            'chapter' => '1',
+            'anchor_type' => 'verse',
+            'title' => 'Following Jesus',
+            'body_markdown' => 'A short reflection on discipleship.',
+            'verse_start' => '43',
+            'verse_end' => '43',
         ]);
 
         $this->actingAs($user)
@@ -70,6 +88,16 @@ class DashboardTest extends TestCase
                 ->component('dashboard')
                 ->where('bookmarkCount', 1)
                 ->where('highlightCount', 1)
+                ->where('noteCount', 1)
+                ->has('notes', 1)
+                ->where('notes.0.title', 'Following Jesus')
+                ->where('notes.0.reference', 'John 1:43')
+                ->where('notes.0.readerUrl', "/read/oeb/JHN/1?note={$note->id}")
+                ->has('highlights', 1)
+                ->where('highlights.0.selectedText', 'Follow me')
+                ->where('highlights.0.color', 'green')
+                ->where('highlights.0.reference', 'John 1:43')
+                ->where('highlights.0.readerUrl', '/read/oeb/JHN/1')
                 ->has('bookmarks', 1)
                 ->where('bookmarks.0.title', 'Calling the disciples')
                 ->where('bookmarks.0.reference', 'John 1:35–51')

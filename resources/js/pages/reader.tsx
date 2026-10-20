@@ -4,12 +4,15 @@ import {
     ArrowRight,
     Bookmark,
     BookOpen,
-    ChevronDown,
     Highlighter,
     List,
+    Maximize2,
+    Minimize2,
     MoreHorizontal,
     NotebookPen,
+    Pencil,
     Plus,
+    Save,
     Search,
     Trash2,
     X,
@@ -18,6 +21,7 @@ import {
     Fragment,
     type CSSProperties,
     type ReactNode,
+    useCallback,
     useEffect,
     useMemo,
     useRef,
@@ -36,6 +40,8 @@ import type {
 import { parseUsfm } from 'usfm-parser';
 import { parseOeb, type OebVariantOptions } from 'usfm-parser/oeb';
 import { toast } from 'sonner';
+import NoteEditor from '@/components/note-editor';
+import CustomSelect from '@/components/custom-select';
 
 interface ScriptureArtwork {
     id: string;
@@ -100,6 +106,9 @@ interface ReaderProps {
     bookmarks?: ChapterBookmark[];
     focusedBookmark?: ChapterBookmark | null;
     highlights?: ScriptureHighlight[];
+    notes?: ScriptureNote[];
+    focusedNoteId?: string | null;
+    focusedNoteExpanded?: boolean;
 }
 
 interface ChapterBookmark {
@@ -127,9 +136,39 @@ interface ScriptureHighlight {
     segments: HighlightSegment[];
 }
 
+type NoteAnchorType = 'verse' | 'range' | 'section' | 'selection';
+
+interface ScriptureNote {
+    id: string;
+    title: string;
+    bodyMarkdown: string;
+    anchorType: NoteAnchorType;
+    selectedText?: string | null;
+    sectionKey?: string | null;
+    sectionTitle?: string | null;
+    verseStart?: string | null;
+    verseEnd?: string | null;
+    segments: HighlightSegment[];
+}
+
+interface NoteAnchor {
+    type: NoteAnchorType;
+    verseStart?: string;
+    verseEnd?: string;
+    sectionKey?: string;
+    sectionTitle?: string;
+    selectedText?: string;
+    segments?: HighlightSegment[];
+}
+
 interface PendingHighlight {
     selectedText: string;
     segments: HighlightSegment[];
+    position: { top: number; left: number };
+}
+
+interface SelectionNotePreview {
+    note: ScriptureNote;
     position: { top: number; left: number };
 }
 
@@ -148,6 +187,71 @@ interface TypographyPreferences {
     fontSize: 'small' | 'medium' | 'large';
     lineSpacing: 'compact' | 'comfortable' | 'relaxed';
     theme: 'light' | 'dark' | 'sepia';
+}
+
+function notePreview(markdown: string): string {
+    return markdown
+        .replace(/[#>*_`[\]()!-]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function NoteMarker({
+    notes,
+    onClick,
+    variant = 'verse',
+}: {
+    notes: ScriptureNote[];
+    onClick: () => void;
+    variant?: 'verse' | 'section';
+}) {
+    const isSection = variant === 'section';
+
+    return (
+        <span className="group/note relative flex justify-end pt-0.5 font-sans">
+            <button
+                type="button"
+                onClick={onClick}
+                aria-label={
+                    notes.length
+                        ? `Open ${notes.length} ${notes.length === 1 ? 'note' : 'notes'}`
+                        : 'Add note'
+                }
+                className={`relative inline-grid size-8 cursor-pointer place-items-center rounded-full transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--reader-accent)] ${notes.length ? (isSection ? 'text-black opacity-100' : 'text-[var(--reader-accent)] opacity-100') : 'text-stone-400 opacity-0 group-focus-within/verse:opacity-100 group-hover/verse:opacity-100 hover:text-[var(--reader-accent)] focus:opacity-100'}`}
+            >
+                <NotebookPen
+                    className={`size-4 ${notes.length ? (isSection ? 'fill-stone-500/35' : 'fill-current/15') : ''}`}
+                />
+                {notes.length > 1 && (
+                    <span
+                        className={`absolute -top-1 -right-1 grid size-4 place-items-center rounded-full text-[0.62rem] font-bold text-white tabular-nums ${isSection ? 'bg-stone-950' : 'bg-[var(--reader-accent)]'}`}
+                    >
+                        {notes.length}
+                    </span>
+                )}
+            </button>
+            {notes.length > 0 && (
+                <span
+                    role="tooltip"
+                    className="pointer-events-none absolute top-8 right-0 z-40 hidden w-72 rounded-xl border border-stone-200 bg-[#fffdf9] p-4 text-left text-stone-800 shadow-xl group-focus-within/note:block group-hover/note:block"
+                >
+                    {notes.slice(0, 3).map((note) => (
+                        <span
+                            key={note.id}
+                            className="block border-b border-dotted border-stone-300 py-2 last:border-0"
+                        >
+                            <span className="block text-xs font-semibold">
+                                {note.title}
+                            </span>
+                            <span className="mt-1 line-clamp-3 block font-serif text-sm leading-5 text-stone-600">
+                                {notePreview(note.bodyMarkdown)}
+                            </span>
+                        </span>
+                    ))}
+                </span>
+            )}
+        </span>
+    );
 }
 
 const highlightColors: Array<{
@@ -581,20 +685,16 @@ function PreferenceSelect({
     onChange,
 }: PreferenceSelectProps) {
     return (
-        <label className="grid gap-1.5 text-xs tracking-wide text-stone-500 uppercase">
+        <div className="grid gap-1.5 text-xs tracking-wide text-stone-500 uppercase">
             <span>{label}</span>
-            <select
+            <CustomSelect
+                label={label}
                 value={value}
-                onChange={(event) => onChange(event.target.value)}
-                className="cursor-pointer rounded-lg border border-stone-300 bg-[#fffdf8] px-3 py-2.5 text-sm tracking-normal text-stone-900 normal-case outline-none focus-visible:border-[#a95624] focus-visible:ring-2 focus-visible:ring-[#a95624]/30"
-            >
-                {options.map((option) => (
-                    <option key={option.value} value={option.value}>
-                        {option.label}
-                    </option>
-                ))}
-            </select>
-        </label>
+                onChange={onChange}
+                options={options}
+                triggerClassName="rounded-lg text-sm tracking-normal normal-case"
+            />
+        </div>
     );
 }
 
@@ -631,9 +731,38 @@ function TypographyChoice<Value extends string>({
     );
 }
 
+function DashboardIcon({
+    className = '',
+    strokeWidth = 1.6,
+}: {
+    className?: string;
+    strokeWidth?: number;
+}) {
+    return (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={className}
+            aria-hidden="true"
+        >
+            <rect x="3" y="3" width="8" height="5" rx="1.6" />
+            <rect x="13" y="3" width="8" height="10" rx="1.6" />
+            <rect x="3" y="10" width="8" height="11" rx="1.6" />
+            <rect x="13" y="15" width="8" height="6" rx="1.6" />
+        </svg>
+    );
+}
+
 function Brand() {
     return (
-        <div className="flex items-center gap-3 text-stone-950">
+        <Link
+            href="/dashboard"
+            className="flex items-center gap-3 rounded-md text-stone-950 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#a95624]"
+        >
             <img
                 src="/images/brand/open-bible-mark-dark-128.png"
                 alt=""
@@ -645,7 +774,7 @@ function Brand() {
             <span className="font-serif text-[1.08rem] font-semibold">
                 Open Bible
             </span>
-        </div>
+        </Link>
     );
 }
 
@@ -657,11 +786,11 @@ function Library({
     close?: () => void;
 }) {
     const navItems = [
+        { icon: DashboardIcon, label: 'Dashboard', href: '/dashboard' },
         { icon: BookOpen, label: 'Read' },
-        { icon: NotebookPen, label: 'Notes' },
+        { icon: NotebookPen, label: 'Notes', href: '/notes' },
         { icon: Highlighter, label: 'Highlights', href: '/highlights' },
         { icon: Bookmark, label: 'Bookmarks', href: '/bookmarks' },
-        { icon: MoreHorizontal, label: 'More' },
     ] as const;
     return (
         <div className="flex h-full flex-col bg-[#faf8f3]">
@@ -732,6 +861,9 @@ export default function Reader({
     bookmarks = [],
     focusedBookmark,
     highlights = [],
+    notes = [],
+    focusedNoteId,
+    focusedNoteExpanded = false,
 }: ReaderProps) {
     const { auth } = usePage().props;
     const [loadedSource, setLoadedSource] = useState<{
@@ -764,6 +896,25 @@ export default function Reader({
     const [pendingHighlight, setPendingHighlight] =
         useState<PendingHighlight>();
     const [highlightProcessing, setHighlightProcessing] = useState(false);
+    const [selectionNotePreview, setSelectionNotePreview] =
+        useState<SelectionNotePreview>();
+    const [noteOpen, setNoteOpen] = useState(false);
+    const [noteClosing, setNoteClosing] = useState(false);
+    const [noteExpanded, setNoteExpanded] = useState(false);
+    const [noteReferenceOpen, setNoteReferenceOpen] = useState(false);
+    const [noteMode, setNoteMode] = useState<'create' | 'edit' | 'list'>(
+        'create',
+    );
+    const [noteList, setNoteList] = useState<ScriptureNote[]>([]);
+    const [noteListAnchor, setNoteListAnchor] = useState<NoteAnchor>();
+    const [editingNote, setEditingNote] = useState<ScriptureNote>();
+    const [noteAnchor, setNoteAnchor] = useState<NoteAnchor>({ type: 'verse' });
+    const [noteOriginVerse, setNoteOriginVerse] = useState<string>();
+    const [noteTitle, setNoteTitle] = useState('');
+    const [noteTitleAutomatic, setNoteTitleAutomatic] = useState(true);
+    const [noteBody, setNoteBody] = useState('');
+    const [noteProcessing, setNoteProcessing] = useState(false);
+    const [noteError, setNoteError] = useState<string>();
     const editionPreferencesRef = useRef<HTMLDivElement>(null);
     const typographyRef = useRef<HTMLDivElement>(null);
     const outlineRef = useRef<HTMLDivElement>(null);
@@ -772,6 +923,45 @@ export default function Reader({
     const heroArtworkRef = useRef<HTMLDivElement>(null);
     const heroTextRef = useRef<HTMLDivElement>(null);
     const readerArticleRef = useRef<HTMLElement>(null);
+    const closeNoteDrawer = useCallback(() => {
+        if (noteClosing) return;
+        const duration = window.matchMedia('(prefers-reduced-motion: reduce)')
+            .matches
+            ? 0
+            : 280;
+        setNoteClosing(true);
+        window.setTimeout(() => {
+            setNoteOpen(false);
+            setNoteClosing(false);
+            setNoteExpanded(false);
+            setNoteReferenceOpen(false);
+        }, duration);
+    }, [noteClosing]);
+    const beginEditNote = useCallback(
+        (note: ScriptureNote, expanded = false) => {
+            const originVerse = note.verseStart ?? note.segments[0]?.verse;
+            setEditingNote(note);
+            setNoteOriginVerse(originVerse);
+            setNoteAnchor({
+                type: note.anchorType,
+                verseStart: note.verseStart ?? note.segments[0]?.verse,
+                verseEnd: note.verseEnd ?? note.segments.at(-1)?.verse,
+                sectionKey: note.sectionKey ?? undefined,
+                sectionTitle: note.sectionTitle ?? undefined,
+                selectedText: note.selectedText ?? undefined,
+                segments: note.segments,
+            });
+            setNoteTitle(note.title);
+            setNoteTitleAutomatic(false);
+            setNoteBody(note.bodyMarkdown);
+            setNoteError(undefined);
+            setNoteMode('edit');
+            setNoteExpanded(expanded);
+            setNoteReferenceOpen(false);
+            setNoteOpen(true);
+        },
+        [],
+    );
 
     useEffect(() => {
         let active = true;
@@ -813,17 +1003,27 @@ export default function Reader({
             !typographyOpen &&
             !outlineOpen &&
             !bookmarkOpen &&
-            !highlightOpen
+            !highlightOpen &&
+            !noteOpen
         )
             return;
 
         const dismissOnEscape = (event: KeyboardEvent) => {
             if (event.key !== 'Escape') return;
+            if (noteReferenceOpen) {
+                setNoteReferenceOpen(false);
+                return;
+            }
+            if (noteExpanded) {
+                setNoteExpanded(false);
+                return;
+            }
             setEditionPreferencesOpen(false);
             setTypographyOpen(false);
             setOutlineOpen(false);
             setBookmarkOpen(false);
             setHighlightOpen(false);
+            closeNoteDrawer();
         };
         const dismissOnOutsidePointer = (event: PointerEvent) => {
             const target = event.target;
@@ -863,8 +1063,12 @@ export default function Reader({
         };
     }, [
         bookmarkOpen,
+        closeNoteDrawer,
         editionPreferencesOpen,
         highlightOpen,
+        noteOpen,
+        noteExpanded,
+        noteReferenceOpen,
         outlineOpen,
         typographyOpen,
     ]);
@@ -958,7 +1162,11 @@ export default function Reader({
         ).Highlight;
         if (!registry || !HighlightConstructor) return;
 
-        const names = highlightColors.map(({ value }) => `open-bible-${value}`);
+        const noteSelectionName = 'open-bible-note-selection';
+        const names = [
+            ...highlightColors.map(({ value }) => `open-bible-${value}`),
+            noteSelectionName,
+        ];
         names.forEach((name) => registry.delete(name));
 
         const ranges = new Map<HighlightColor, Range[]>();
@@ -984,8 +1192,154 @@ export default function Reader({
             }
         });
 
+        const noteRanges = notes.flatMap((note) => {
+            if (note.anchorType !== 'selection') return [];
+            return note.segments.flatMap((segment) => {
+                const verseElement =
+                    readerArticleRef.current?.querySelector<HTMLElement>(
+                        `[data-verse-number="${CSS.escape(segment.verse)}"]`,
+                    );
+                if (!verseElement) return [];
+                const range = rangeForHighlightSegment(verseElement, segment);
+                return range ? [range] : [];
+            });
+        });
+        if (noteRanges.length) {
+            registry.set(
+                noteSelectionName,
+                new HighlightConstructor(...noteRanges),
+            );
+        }
+
         return () => names.forEach((name) => registry.delete(name));
-    }, [content, highlights]);
+    }, [content, highlights, notes]);
+
+    useEffect(() => {
+        const article = readerArticleRef.current;
+        const selectionNotes = notes.filter(
+            (note) => note.anchorType === 'selection',
+        );
+        if (!article || selectionNotes.length === 0) {
+            setSelectionNotePreview(undefined);
+            return;
+        }
+
+        const notesAtPoint = (
+            clientX: number,
+            clientY: number,
+            target: EventTarget | null,
+        ) => {
+            const verseElement =
+                target instanceof Element
+                    ? target.closest<HTMLElement>('[data-verse-number]')
+                    : null;
+            if (!verseElement || !article.contains(verseElement)) {
+                return [];
+            }
+
+            const documentWithCaret = window.document as Document & {
+                caretPositionFromPoint?: (
+                    x: number,
+                    y: number,
+                ) => { offsetNode: Node; offset: number } | null;
+                caretRangeFromPoint?: (x: number, y: number) => Range | null;
+            };
+            const caretPosition = documentWithCaret.caretPositionFromPoint?.(
+                clientX,
+                clientY,
+            );
+            const fallbackRange = caretPosition
+                ? null
+                : documentWithCaret.caretRangeFromPoint?.(clientX, clientY);
+            const node =
+                caretPosition?.offsetNode ?? fallbackRange?.startContainer;
+            const nodeOffset =
+                caretPosition?.offset ?? fallbackRange?.startOffset;
+            if (
+                !node ||
+                nodeOffset === undefined ||
+                !verseElement.contains(node)
+            ) {
+                return [];
+            }
+
+            const offset = textOffset(verseElement, node, nodeOffset);
+            const verse = verseElement.dataset.verseNumber;
+            return selectionNotes.filter((candidate) =>
+                candidate.segments.some(
+                    (segment) =>
+                        segment.verse === verse &&
+                        offset >= segment.startOffset &&
+                        offset <= segment.endOffset,
+                ),
+            );
+        };
+        const noteAtPoint = (event: PointerEvent) => {
+            const note = notesAtPoint(
+                event.clientX,
+                event.clientY,
+                event.target,
+            )[0];
+            if (!note) {
+                setSelectionNotePreview(undefined);
+                return;
+            }
+
+            setSelectionNotePreview({
+                note,
+                position: {
+                    top:
+                        event.clientY > window.innerHeight - 180
+                            ? event.clientY - 150
+                            : event.clientY + 16,
+                    left: Math.max(
+                        12,
+                        Math.min(event.clientX + 16, window.innerWidth - 332),
+                    ),
+                },
+            });
+        };
+        const openNoteAtPoint = (event: MouseEvent) => {
+            const selection = window.getSelection();
+            if (selection && !selection.isCollapsed) return;
+
+            const anchored = notesAtPoint(
+                event.clientX,
+                event.clientY,
+                event.target,
+            );
+            if (anchored.length === 0) return;
+
+            event.preventDefault();
+            setSelectionNotePreview(undefined);
+            const first = anchored[0];
+            setNoteList(anchored);
+            setNoteListAnchor({
+                type: 'selection',
+                selectedText: first.selectedText ?? undefined,
+                segments: first.segments,
+                verseStart: first.verseStart ?? first.segments[0]?.verse,
+                verseEnd: first.verseEnd ?? first.segments.at(-1)?.verse,
+            });
+            setNoteMode('list');
+            setNoteExpanded(false);
+            setNoteReferenceOpen(false);
+            setNoteOpen(true);
+        };
+        const clearPreview = () => setSelectionNotePreview(undefined);
+
+        article.addEventListener('pointermove', noteAtPoint);
+        article.addEventListener('click', openNoteAtPoint);
+        article.addEventListener('pointerleave', clearPreview);
+        return () => {
+            article.removeEventListener('pointermove', noteAtPoint);
+            article.removeEventListener('click', openNoteAtPoint);
+            article.removeEventListener('pointerleave', clearPreview);
+        };
+    }, [content, notes]);
+    useEffect(() => {
+        if (noteOpen) setSelectionNotePreview(undefined);
+    }, [noteOpen]);
     const chapterIndex = chapters.indexOf(chapter);
     const chapterArtwork = useMemo(
         () =>
@@ -1245,6 +1599,258 @@ export default function Reader({
         setHighlightOpen((open) => !open);
     };
 
+    const sectionForVerse = (verse: string) => {
+        const number = Number.parseInt(verse, 10);
+        return outline.find((item) => {
+            const start = Number.parseInt(item.verseStart ?? '', 10);
+            const end = Number.parseInt(
+                item.verseEnd ?? item.verseStart ?? '',
+                10,
+            );
+            return Number.isFinite(number) && number >= start && number <= end;
+        });
+    };
+    const notesForVerse = (verse: string) =>
+        notes.filter((note) => {
+            if (
+                note.anchorType === 'section' ||
+                note.anchorType === 'selection'
+            )
+                return false;
+            if (!note.verseStart) return false;
+            const value = Number.parseInt(verse, 10);
+            const start = Number.parseInt(note.verseStart, 10);
+            const end = Number.parseInt(note.verseEnd ?? note.verseStart, 10);
+            return value >= start && value <= end;
+        });
+    const notesForSection = (
+        heading: Extract<ReadingItem, { kind: 'heading' }>,
+    ) => {
+        const title = inlinePlainText(heading.content);
+        return notes.filter(
+            (note) =>
+                note.anchorType === 'section' &&
+                (note.sectionKey === heading.key ||
+                    (!note.sectionKey && note.sectionTitle === title)),
+        );
+    };
+    const beginCreateNote = (anchor: NoteAnchor) => {
+        if (!auth.user) {
+            router.visit('/login');
+            return;
+        }
+        const section = anchor.verseStart
+            ? sectionForVerse(anchor.verseStart)
+            : undefined;
+        const resolvedAnchor =
+            anchor.type === 'section' && section
+                ? {
+                      ...anchor,
+                      sectionKey: section.key,
+                      sectionTitle: section.title,
+                      verseStart: section.verseStart,
+                      verseEnd: section.verseEnd,
+                  }
+                : anchor;
+        setEditingNote(undefined);
+        setNoteOriginVerse(anchor.verseStart);
+        setNoteAnchor(resolvedAnchor);
+        setNoteTitle(
+            anchor.type === 'selection'
+                ? (section?.title ?? 'Passage note')
+                : anchor.type === 'section'
+                  ? (section?.title ?? 'Section note')
+                  : `${book.name} ${chapter}:${anchor.verseStart}`,
+        );
+        setNoteTitleAutomatic(true);
+        setNoteBody('');
+        setNoteError(undefined);
+        setNoteMode('create');
+        setNoteExpanded(false);
+        setNoteReferenceOpen(false);
+        setNoteOpen(true);
+        setPendingHighlight(undefined);
+        window.getSelection()?.removeAllRanges();
+    };
+    const openNotesAt = (verse: string) => {
+        if (!auth.user) {
+            router.visit('/login');
+            return;
+        }
+        const anchored = notesForVerse(verse);
+        if (anchored.length === 0) {
+            setNoteList([]);
+            setNoteListAnchor(undefined);
+            beginCreateNote({
+                type: 'verse',
+                verseStart: verse,
+                verseEnd: verse,
+            });
+        } else {
+            setNoteList(anchored);
+            setNoteListAnchor({
+                type: 'verse',
+                verseStart: verse,
+                verseEnd: verse,
+            });
+            setNoteMode('list');
+            setNoteExpanded(false);
+            setNoteReferenceOpen(false);
+            setNoteOpen(true);
+        }
+    };
+    const openNotesForSection = (
+        heading: Extract<ReadingItem, { kind: 'heading' }>,
+    ) => {
+        if (!auth.user) {
+            router.visit('/login');
+            return;
+        }
+        const section = outline.find((item) => item.key === heading.key);
+        if (!section?.verseStart) return;
+
+        const anchor: NoteAnchor = {
+            type: 'section',
+            verseStart: section.verseStart,
+            verseEnd: section.verseEnd,
+            sectionKey: section.key,
+            sectionTitle: section.title,
+        };
+        const anchored = notesForSection(heading);
+        if (anchored.length === 0) {
+            setNoteList([]);
+            setNoteListAnchor(undefined);
+            beginCreateNote(anchor);
+            return;
+        }
+
+        setNoteList(anchored);
+        setNoteListAnchor(anchor);
+        setNoteMode('list');
+        setNoteExpanded(false);
+        setNoteReferenceOpen(false);
+        setNoteOpen(true);
+    };
+    const updateNoteAnchorType = (type: NoteAnchorType) => {
+        if (type === 'selection' || !noteOriginVerse) return;
+        const section = sectionForVerse(noteOriginVerse);
+        const nextAnchor: NoteAnchor =
+            type === 'section' && section
+                ? {
+                      type,
+                      verseStart: section.verseStart,
+                      verseEnd: section.verseEnd,
+                      sectionKey: section.key,
+                      sectionTitle: section.title,
+                  }
+                : type === 'range'
+                  ? {
+                        type,
+                        verseStart: noteOriginVerse,
+                        verseEnd: noteOriginVerse,
+                    }
+                  : {
+                        type: 'verse',
+                        verseStart: noteOriginVerse,
+                        verseEnd: noteOriginVerse,
+                    };
+        setNoteAnchor(nextAnchor);
+        if (noteTitleAutomatic) {
+            setNoteTitle(
+                type === 'section' && section
+                    ? section.title
+                    : `${book.name} ${chapter}:${noteOriginVerse}`,
+            );
+        }
+    };
+    const updateNoteRange = (edge: 'start' | 'end', value: string) => {
+        const start =
+            edge === 'start' ? value : (noteAnchor.verseStart ?? value);
+        const end = edge === 'end' ? value : (noteAnchor.verseEnd ?? value);
+        const startIndex = verseNumbers.indexOf(start);
+        const endIndex = verseNumbers.indexOf(end);
+        const normalizedEnd = endIndex < startIndex ? start : end;
+        setNoteAnchor({
+            type: 'range',
+            verseStart: start,
+            verseEnd: normalizedEnd,
+        });
+        if (noteTitleAutomatic) {
+            setNoteTitle(
+                `${book.name} ${chapter}:${start}${normalizedEnd !== start ? `–${normalizedEnd}` : ''}`,
+            );
+        }
+    };
+    const saveNote = () => {
+        if (!noteTitle.trim() || !noteBody.trim()) {
+            setNoteError('Add a title and some note text before saving.');
+            return;
+        }
+        const data = {
+            bible_book_id: book.id,
+            chapter,
+            anchor_type: noteAnchor.type,
+            title: noteTitle.trim(),
+            body_markdown: noteBody,
+            selected_text: noteAnchor.selectedText ?? null,
+            section_key: noteAnchor.sectionKey ?? null,
+            section_title: noteAnchor.sectionTitle ?? null,
+            verse_start:
+                noteAnchor.verseStart ??
+                noteAnchor.segments?.[0]?.verse ??
+                null,
+            verse_end:
+                noteAnchor.verseEnd ??
+                noteAnchor.segments?.at(-1)?.verse ??
+                null,
+            segments: (noteAnchor.segments ?? []).map((segment) => ({
+                verse: segment.verse,
+                start_offset: segment.startOffset,
+                end_offset: segment.endOffset,
+                exact_text: segment.exactText,
+                prefix: segment.prefix,
+                suffix: segment.suffix,
+            })),
+        };
+        const options = {
+            preserveScroll: true,
+            onStart: () => {
+                setNoteProcessing(true);
+                setNoteError(undefined);
+            },
+            onError: (errors: Record<string, string>) =>
+                setNoteError(Object.values(errors)[0]),
+            onSuccess: () => {
+                closeNoteDrawer();
+                toast.success(
+                    noteMode === 'edit' ? 'Note updated' : 'Note saved',
+                );
+            },
+            onFinish: () => setNoteProcessing(false),
+        };
+        if (noteMode === 'edit' && editingNote)
+            router.patch(`/notes/${editingNote.id}`, data, options);
+        else router.post('/notes', data, options);
+    };
+    const removeNote = (note: ScriptureNote) => {
+        if (!window.confirm(`Delete “${note.title}”?`)) return;
+        router.delete(`/notes/${note.id}`, {
+            preserveScroll: true,
+            onSuccess: () => {
+                closeNoteDrawer();
+                toast.success('Note removed');
+            },
+        });
+    };
+
+    useEffect(() => {
+        if (!focusedNoteId) return;
+        const note = notes.find(({ id }) => id === focusedNoteId);
+        if (note) beginEditNote(note, focusedNoteExpanded);
+        // Open only when arriving via a focused note URL.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [focusedNoteExpanded, focusedNoteId]);
+
     const longNamePrefix = book.longName?.endsWith(book.name)
         ? book.longName.slice(0, -book.name.length).trim()
         : book.longName;
@@ -1288,6 +1894,22 @@ export default function Reader({
         comfortable: 1.52,
         relaxed: 1.72,
     }[typography.lineSpacing];
+    const noteStartVerse =
+        noteAnchor.verseStart ?? noteAnchor.segments?.[0]?.verse;
+    const noteEndVerse =
+        noteAnchor.verseEnd ??
+        noteAnchor.segments?.at(-1)?.verse ??
+        noteStartVerse;
+    const noteReference = noteStartVerse
+        ? `${book.name} ${chapter}:${noteStartVerse}${noteEndVerse && noteEndVerse !== noteStartVerse ? `–${noteEndVerse}` : ''}`
+        : `${book.name} ${chapter}`;
+    const notePassage = fullContent.filter((item) => {
+        if (item.kind !== 'verse' || !noteStartVerse) return false;
+        const value = Number.parseInt(item.number, 10);
+        const start = Number.parseInt(noteStartVerse, 10);
+        const end = Number.parseInt(noteEndVerse ?? noteStartVerse, 10);
+        return value >= start && value <= end;
+    });
 
     return (
         <>
@@ -1532,29 +2154,19 @@ export default function Reader({
                                 >
                                     <ArrowLeft className="size-5" />
                                 </Link>
-                                <label className="relative font-serif text-lg font-semibold">
-                                    <span className="sr-only">Chapter</span>
-                                    <select
-                                        value={chapter}
-                                        onChange={(event) =>
-                                            changeChapter(event.target.value)
-                                        }
-                                        className="cursor-pointer appearance-none rounded-md bg-transparent py-2 pr-7 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--reader-accent)]"
-                                        style={{
-                                            colorScheme:
-                                                typography.theme === 'dark'
-                                                    ? 'dark'
-                                                    : 'light',
-                                        }}
-                                    >
-                                        {chapters.map((number) => (
-                                            <option key={number} value={number}>
-                                                {book.name} {number}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <ChevronDown className="pointer-events-none absolute top-3 right-0 size-4" />
-                                </label>
+                                <CustomSelect
+                                    label="Chapter"
+                                    value={chapter}
+                                    onChange={changeChapter}
+                                    options={chapters.map((number) => ({
+                                        value: number,
+                                        label: `${book.name} ${number}`,
+                                    }))}
+                                    theme={typography.theme}
+                                    variant="inline"
+                                    className="font-serif text-lg font-semibold"
+                                    triggerClassName="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--reader-accent)] focus-visible:ring-0"
+                                />
                             </div>
                             <div className="flex items-center gap-1">
                                 <button
@@ -2113,7 +2725,7 @@ export default function Reader({
                                                         onClick={
                                                             beginCreateBookmark
                                                         }
-                                                        className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--reader-accent)] px-4 py-3 text-sm font-semibold text-white"
+                                                        className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-positive px-4 py-3 text-sm font-semibold text-positive-foreground hover:bg-positive-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-positive"
                                                     >
                                                         <Plus className="size-4" />
                                                         Save another passage
@@ -2154,7 +2766,7 @@ export default function Reader({
                                                         />
                                                     </label>
                                                     <div className="grid grid-cols-2 gap-3">
-                                                        <label className="grid gap-1.5 text-xs font-semibold tracking-wide uppercase">
+                                                        <div className="grid gap-1.5 text-xs font-semibold tracking-wide uppercase">
                                                             <span
                                                                 className={
                                                                     readerMutedText
@@ -2162,17 +2774,14 @@ export default function Reader({
                                                             >
                                                                 From verse
                                                             </span>
-                                                            <select
+                                                            <CustomSelect
+                                                                label="From verse"
                                                                 value={
                                                                     bookmarkVerseStart
                                                                 }
                                                                 onChange={(
-                                                                    event,
+                                                                    value,
                                                                 ) => {
-                                                                    const value =
-                                                                        event
-                                                                            .target
-                                                                            .value;
                                                                     setBookmarkVerseStart(
                                                                         value,
                                                                     );
@@ -2187,31 +2796,27 @@ export default function Reader({
                                                                             value,
                                                                         );
                                                                 }}
-                                                                className={`rounded-xl border bg-transparent px-3 py-2.5 text-sm font-normal tracking-normal normal-case outline-none ${readerDivider}`}
-                                                            >
-                                                                <option value="">
-                                                                    Whole
-                                                                    chapter
-                                                                </option>
-                                                                {verseNumbers.map(
-                                                                    (verse) => (
-                                                                        <option
-                                                                            key={
-                                                                                verse
-                                                                            }
-                                                                            value={
-                                                                                verse
-                                                                            }
-                                                                        >
-                                                                            {
-                                                                                verse
-                                                                            }
-                                                                        </option>
+                                                                options={[
+                                                                    {
+                                                                        value: '',
+                                                                        label: 'Whole chapter',
+                                                                    },
+                                                                    ...verseNumbers.map(
+                                                                        (
+                                                                            verse,
+                                                                        ) => ({
+                                                                            value: verse,
+                                                                            label: verse,
+                                                                        }),
                                                                     ),
-                                                                )}
-                                                            </select>
-                                                        </label>
-                                                        <label className="grid gap-1.5 text-xs font-semibold tracking-wide uppercase">
+                                                                ]}
+                                                                theme={
+                                                                    typography.theme
+                                                                }
+                                                                triggerClassName="text-sm font-normal tracking-normal normal-case"
+                                                            />
+                                                        </div>
+                                                        <div className="grid gap-1.5 text-xs font-semibold tracking-wide uppercase">
                                                             <span
                                                                 className={
                                                                     readerMutedText
@@ -2219,7 +2824,8 @@ export default function Reader({
                                                             >
                                                                 To verse
                                                             </span>
-                                                            <select
+                                                            <CustomSelect
+                                                                label="To verse"
                                                                 value={
                                                                     bookmarkVerseEnd
                                                                 }
@@ -2227,34 +2833,26 @@ export default function Reader({
                                                                     !bookmarkVerseStart
                                                                 }
                                                                 onChange={(
-                                                                    event,
+                                                                    value,
                                                                 ) =>
                                                                     setBookmarkVerseEnd(
-                                                                        event
-                                                                            .target
-                                                                            .value,
+                                                                        value,
                                                                     )
                                                                 }
-                                                                className={`rounded-xl border bg-transparent px-3 py-2.5 text-sm font-normal tracking-normal normal-case outline-none disabled:opacity-45 ${readerDivider}`}
-                                                            >
-                                                                {verseNumbers.map(
-                                                                    (verse) => (
-                                                                        <option
-                                                                            key={
-                                                                                verse
-                                                                            }
-                                                                            value={
-                                                                                verse
-                                                                            }
-                                                                        >
-                                                                            {
-                                                                                verse
-                                                                            }
-                                                                        </option>
-                                                                    ),
+                                                                options={verseNumbers.map(
+                                                                    (
+                                                                        verse,
+                                                                    ) => ({
+                                                                        value: verse,
+                                                                        label: verse,
+                                                                    }),
                                                                 )}
-                                                            </select>
-                                                        </label>
+                                                                theme={
+                                                                    typography.theme
+                                                                }
+                                                                triggerClassName="text-sm font-normal tracking-normal normal-case"
+                                                            />
+                                                        </div>
                                                     </div>
                                                     {bookmarkError && (
                                                         <p
@@ -2273,7 +2871,7 @@ export default function Reader({
                                                             onClick={
                                                                 saveBookmark
                                                             }
-                                                            className="flex-1 rounded-xl bg-[var(--reader-accent)] px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
+                                                            className="flex-1 rounded-xl bg-positive px-4 py-3 text-sm font-semibold text-positive-foreground hover:bg-positive-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-positive disabled:opacity-60"
                                                         >
                                                             {bookmarkProcessing
                                                                 ? 'Saving…'
@@ -2390,19 +2988,32 @@ export default function Reader({
                             )}
                             {content.map((item, index) =>
                                 item.kind === 'heading' ? (
-                                    <h2
+                                    <div
                                         key={item.key}
                                         id={`section-${item.key}`}
-                                        className={`${index ? `mt-12 border-t pt-7 ${readerDivider}` : ''} mb-4 scroll-mt-[6.5rem] font-sans text-[0.68rem] font-semibold tracking-[0.29em] uppercase ${readerMutedText}`}
+                                        className={`group/section flex scroll-mt-[6.5rem] items-center justify-between gap-3 ${index ? `mt-12 border-t pt-7 ${readerDivider}` : ''} mb-4`}
                                     >
-                                        {renderInlineSequence(item.content)}
-                                    </h2>
+                                        <h2
+                                            className={`font-sans text-[0.68rem] font-semibold tracking-[0.29em] uppercase ${readerMutedText}`}
+                                        >
+                                            {renderInlineSequence(item.content)}
+                                        </h2>
+                                        {notesForSection(item).length > 0 && (
+                                            <NoteMarker
+                                                notes={notesForSection(item)}
+                                                variant="section"
+                                                onClick={() =>
+                                                    openNotesForSection(item)
+                                                }
+                                            />
+                                        )}
+                                    </div>
                                 ) : (
                                     <div
                                         key={item.key}
-                                        className="grid grid-cols-[4.5rem_1.5rem_minmax(0,1fr)] gap-x-2 py-1.5"
+                                        className="group/verse grid grid-cols-[4.5rem_1.5rem_minmax(0,1fr)_2.75rem] items-start gap-x-2 py-1.5"
                                     >
-                                        <span aria-hidden="true">
+                                        <span>
                                             {item.number === '1' && (
                                                 <span
                                                     className={`-mt-1 block font-serif leading-none text-[var(--reader-accent)] ${chapter.length >= 3 ? 'text-[2.75rem]' : 'text-[3.5rem]'}`}
@@ -2419,6 +3030,12 @@ export default function Reader({
                                         <p data-verse-number={item.number}>
                                             {renderInlineSequence(item.content)}
                                         </p>
+                                        <NoteMarker
+                                            notes={notesForVerse(item.number)}
+                                            onClick={() =>
+                                                openNotesAt(item.number)
+                                            }
+                                        />
                                     </div>
                                 ),
                             )}
@@ -2426,7 +3043,437 @@ export default function Reader({
                     </div>
                 </main>
 
-                {pendingHighlight && !highlightOpen && (
+                {noteOpen && (
+                    <>
+                        <button
+                            type="button"
+                            aria-label="Close note drawer"
+                            onClick={closeNoteDrawer}
+                            className={`fixed inset-0 z-[75] cursor-default bg-black/20 transition-[opacity,backdrop-filter] duration-300 motion-reduce:transition-none ${noteClosing ? 'opacity-0' : 'opacity-100'}`}
+                            style={{
+                                backdropFilter: noteClosing
+                                    ? 'blur(0px) grayscale(0%)'
+                                    : 'blur(2px) grayscale(55%)',
+                            }}
+                        />
+                        <aside
+                            aria-label="Notes"
+                            className={`fixed inset-y-0 left-0 z-[80] flex w-full animate-in flex-col border-r border-stone-200 bg-[#fffdf9] text-stone-900 shadow-[18px_0_60px_rgba(30,25,20,0.22)] transition-[transform,max-width] duration-300 ease-out slide-in-from-left motion-reduce:transition-none ${noteExpanded ? 'max-w-none' : 'max-w-[440px]'} ${noteClosing ? '-translate-x-full' : 'translate-x-0'}`}
+                        >
+                            <header
+                                className={`border-b border-stone-200 ${noteExpanded ? 'px-5 py-4 md:px-10 lg:px-16' : 'px-5 py-4'}`}
+                            >
+                                <div
+                                    className={`flex items-center justify-between ${noteExpanded ? 'mx-auto w-full max-w-5xl' : ''}`}
+                                >
+                                    <div>
+                                        <p className="font-sans text-[0.65rem] font-semibold tracking-[0.22em] text-[#9a5428] uppercase">
+                                            {book.name} {chapter}
+                                        </p>
+                                        <h2 className="mt-1 font-serif text-2xl">
+                                            {noteMode === 'list'
+                                                ? `${noteList.length} ${noteList.length === 1 ? 'note' : 'notes'} here`
+                                                : noteMode === 'edit'
+                                                  ? 'Edit note'
+                                                  : 'New note'}
+                                        </h2>
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                        {noteMode !== 'list' && (
+                                            <>
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setNoteReferenceOpen(
+                                                            (open) => !open,
+                                                        )
+                                                    }
+                                                    className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-full px-3 font-sans text-sm text-stone-600 hover:bg-stone-100 hover:text-stone-950 focus-visible:outline-2 focus-visible:outline-[#9a5428]"
+                                                    aria-expanded={
+                                                        noteReferenceOpen
+                                                    }
+                                                    aria-controls="note-scripture-reference"
+                                                >
+                                                    <BookOpen className="size-4" />
+                                                    <span className="hidden sm:inline">
+                                                        View passage
+                                                    </span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setNoteExpanded(
+                                                            (expanded) =>
+                                                                !expanded,
+                                                        );
+                                                        setNoteReferenceOpen(
+                                                            false,
+                                                        );
+                                                    }}
+                                                    className="grid size-10 cursor-pointer place-items-center rounded-full hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-[#9a5428]"
+                                                    aria-label={
+                                                        noteExpanded
+                                                            ? 'Exit fullscreen writing'
+                                                            : 'Expand writing area'
+                                                    }
+                                                    title={
+                                                        noteExpanded
+                                                            ? 'Exit fullscreen'
+                                                            : 'Write fullscreen'
+                                                    }
+                                                >
+                                                    {noteExpanded ? (
+                                                        <Minimize2 className="size-5" />
+                                                    ) : (
+                                                        <Maximize2 className="size-5" />
+                                                    )}
+                                                </button>
+                                            </>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={closeNoteDrawer}
+                                            className="grid size-10 cursor-pointer place-items-center rounded-full hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-[#9a5428]"
+                                            aria-label="Close notes"
+                                        >
+                                            <X className="size-5" />
+                                        </button>
+                                    </div>
+                                </div>
+                            </header>
+
+                            {noteReferenceOpen && noteMode !== 'list' && (
+                                <section
+                                    id="note-scripture-reference"
+                                    className={`z-10 border-b border-stone-200 bg-[#f7efe3] shadow-[0_18px_45px_rgba(60,45,30,0.13)] ${noteExpanded ? 'absolute top-[89px] right-6 w-[min(28rem,calc(100%-3rem))] rounded-2xl border md:right-10' : ''}`}
+                                    aria-label={`Passage: ${noteReference}`}
+                                >
+                                    <div className="flex items-start justify-between gap-4 px-5 pt-4 pb-3">
+                                        <div>
+                                            <p className="font-sans text-[0.62rem] font-semibold tracking-[0.2em] text-[#9a5428] uppercase">
+                                                Attached passage
+                                            </p>
+                                            <h3 className="mt-1 font-serif text-lg font-semibold">
+                                                {noteAnchor.sectionTitle ??
+                                                    noteReference}
+                                            </h3>
+                                            {noteAnchor.sectionTitle && (
+                                                <p className="mt-0.5 font-sans text-xs text-stone-500">
+                                                    {noteReference}
+                                                </p>
+                                            )}
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setNoteReferenceOpen(false)
+                                            }
+                                            className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-[#9a5428]"
+                                            aria-label="Close passage"
+                                        >
+                                            <X className="size-4" />
+                                        </button>
+                                    </div>
+                                    <div className="max-h-[45vh] overflow-y-auto border-t border-[#dfcdb7] px-5 py-4 font-serif text-[0.98rem] leading-7 text-stone-700">
+                                        {noteAnchor.selectedText ? (
+                                            <blockquote className="border-l-2 border-[#b66b36] pl-4 italic">
+                                                “{noteAnchor.selectedText}”
+                                            </blockquote>
+                                        ) : notePassage.length ? (
+                                            <div className="grid gap-3">
+                                                {notePassage.map((item) =>
+                                                    item.kind === 'verse' ? (
+                                                        <p
+                                                            key={item.key}
+                                                            className="grid grid-cols-[1.75rem_1fr] gap-2"
+                                                        >
+                                                            <span className="pt-0.5 font-sans text-xs text-[#9a5428]">
+                                                                {item.number}
+                                                            </span>
+                                                            <span>
+                                                                {renderInlineSequence(
+                                                                    item.content,
+                                                                )}
+                                                            </span>
+                                                        </p>
+                                                    ) : null,
+                                                )}
+                                            </div>
+                                        ) : (
+                                            <p className="text-stone-500 italic">
+                                                The attached passage will appear
+                                                here once selected.
+                                            </p>
+                                        )}
+                                    </div>
+                                </section>
+                            )}
+
+                            {noteMode === 'list' ? (
+                                <div className="flex-1 overflow-y-auto p-5">
+                                    <p className="mb-4 font-serif text-sm leading-6 text-stone-500">
+                                        {noteList.length === 1
+                                            ? 'A note is attached here. Open it to read or edit, or create another note at the same location.'
+                                            : 'Several notes are attached here. Choose one to read or edit, or create another at the same location.'}
+                                    </p>
+                                    <div className="grid gap-3">
+                                        {noteList.map((note) => (
+                                            <article
+                                                key={note.id}
+                                                className="overflow-hidden rounded-2xl border border-stone-200 bg-stone-50/70 transition hover:border-[#c99d78] hover:bg-[#fbf5eb]"
+                                            >
+                                                <div className="p-4">
+                                                    <h3 className="font-serif text-lg font-semibold">
+                                                        {note.title}
+                                                    </h3>
+                                                    {note.selectedText && (
+                                                        <p className="mt-2 border-l-2 border-[#c99d78] pl-3 font-serif text-sm text-stone-500 italic">
+                                                            “{note.selectedText}
+                                                            ”
+                                                        </p>
+                                                    )}
+                                                    <p className="mt-2 line-clamp-3 font-serif text-sm leading-6 text-stone-600">
+                                                        {notePreview(
+                                                            note.bodyMarkdown,
+                                                        )}
+                                                    </p>
+                                                </div>
+                                                <div className="note-card-actions flex items-center justify-end border-t border-stone-200 px-3 py-2">
+                                                    <Link
+                                                        href={`/notes/${note.id}`}
+                                                        className="note-card-action inline-flex cursor-pointer items-center gap-2 rounded-full px-3 py-2 font-serif text-sm font-semibold text-stone-700 hover:bg-white hover:text-stone-950 focus-visible:bg-white focus-visible:outline-2 focus-visible:outline-[#9a5428]"
+                                                    >
+                                                        <BookOpen className="size-4" />
+                                                        Read
+                                                    </Link>
+                                                    <span
+                                                        aria-hidden="true"
+                                                        className="note-card-action-separator mx-1 h-5 w-px bg-stone-300"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            beginEditNote(note)
+                                                        }
+                                                        className="note-card-action inline-flex cursor-pointer items-center gap-2 rounded-full px-3 py-2 font-serif text-sm font-semibold text-stone-700 hover:bg-white hover:text-stone-950 focus-visible:bg-white focus-visible:outline-2 focus-visible:outline-[#9a5428]"
+                                                    >
+                                                        <Pencil className="size-4" />
+                                                        Edit
+                                                    </button>
+                                                </div>
+                                            </article>
+                                        ))}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            noteListAnchor &&
+                                            beginCreateNote(noteListAnchor)
+                                        }
+                                        disabled={!noteListAnchor}
+                                        className="mt-5 inline-flex cursor-pointer items-center gap-2 rounded-full bg-positive px-5 py-2.5 font-serif text-sm font-semibold text-positive-foreground hover:bg-positive-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-positive"
+                                    >
+                                        <Plus className="size-4" /> Create note
+                                    </button>
+                                </div>
+                            ) : (
+                                <div
+                                    className={`flex-1 overflow-y-auto ${noteExpanded ? 'px-5 py-8 md:px-10 lg:px-16' : 'px-5 py-5'}`}
+                                >
+                                    <div
+                                        className={
+                                            noteExpanded
+                                                ? 'mx-auto w-full max-w-5xl'
+                                                : ''
+                                        }
+                                    >
+                                        {noteAnchor.selectedText && (
+                                            <blockquote className="mb-5 border-l-2 border-[#b66b36] bg-[#f7efe3] px-4 py-3 font-serif text-sm leading-6 text-stone-600">
+                                                “{noteAnchor.selectedText}”
+                                            </blockquote>
+                                        )}
+                                        <div
+                                            className={
+                                                noteExpanded
+                                                    ? 'mb-6 grid gap-5 md:grid-cols-[15rem_minmax(0,1fr)] md:items-end'
+                                                    : ''
+                                            }
+                                        >
+                                            {noteAnchor.type !==
+                                                'selection' && (
+                                                <div
+                                                    className={`${noteExpanded ? '' : 'mb-4'} grid gap-1.5 font-sans text-xs font-semibold tracking-wide text-stone-500 uppercase`}
+                                                >
+                                                    <span>Attach to</span>
+                                                    <CustomSelect
+                                                        label="Attach to"
+                                                        value={noteAnchor.type}
+                                                        onChange={(value) =>
+                                                            updateNoteAnchorType(
+                                                                value as NoteAnchorType,
+                                                            )
+                                                        }
+                                                        options={[
+                                                            {
+                                                                value: 'verse',
+                                                                label: 'This verse',
+                                                            },
+                                                            {
+                                                                value: 'range',
+                                                                label: 'Verse range',
+                                                            },
+                                                            {
+                                                                value: 'section',
+                                                                label: 'This section',
+                                                            },
+                                                        ]}
+                                                        triggerClassName="min-h-[54px] px-4 py-3 font-serif text-lg font-normal tracking-normal normal-case"
+                                                    />
+                                                </div>
+                                            )}
+                                            <label className="grid gap-1.5 font-sans text-xs font-semibold tracking-wide text-stone-500 uppercase">
+                                                Title
+                                                <input
+                                                    value={noteTitle}
+                                                    onChange={(event) => {
+                                                        setNoteTitleAutomatic(
+                                                            false,
+                                                        );
+                                                        setNoteTitle(
+                                                            event.target.value,
+                                                        );
+                                                    }}
+                                                    maxLength={180}
+                                                    autoFocus
+                                                    placeholder="Give this note a title"
+                                                    className="rounded-xl border border-stone-300 bg-white px-4 py-3 font-serif text-lg font-normal tracking-normal text-stone-900 normal-case outline-none focus:border-[#9a5428] focus:ring-2 focus:ring-[#9a5428]/15"
+                                                />
+                                            </label>
+                                        </div>
+                                        {noteAnchor.type === 'range' && (
+                                            <div className="mb-6 grid gap-4 rounded-2xl border border-stone-200 bg-[#faf5ec] p-4 sm:grid-cols-2">
+                                                <div className="grid gap-1.5 font-sans text-xs font-semibold tracking-wide text-stone-500 uppercase">
+                                                    <span>Start verse</span>
+                                                    <CustomSelect
+                                                        label="Start verse"
+                                                        value={
+                                                            noteAnchor.verseStart ??
+                                                            noteOriginVerse ??
+                                                            verseNumbers[0] ??
+                                                            ''
+                                                        }
+                                                        onChange={(value) =>
+                                                            updateNoteRange(
+                                                                'start',
+                                                                value,
+                                                            )
+                                                        }
+                                                        options={verseNumbers.map(
+                                                            (verse) => ({
+                                                                value: verse,
+                                                                label: `Verse ${verse}`,
+                                                            }),
+                                                        )}
+                                                        triggerClassName="font-serif text-sm font-normal tracking-normal normal-case"
+                                                    />
+                                                </div>
+                                                <div className="grid gap-1.5 font-sans text-xs font-semibold tracking-wide text-stone-500 uppercase">
+                                                    <span>End verse</span>
+                                                    <CustomSelect
+                                                        label="End verse"
+                                                        value={
+                                                            noteAnchor.verseEnd ??
+                                                            noteAnchor.verseStart ??
+                                                            ''
+                                                        }
+                                                        onChange={(value) =>
+                                                            updateNoteRange(
+                                                                'end',
+                                                                value,
+                                                            )
+                                                        }
+                                                        options={verseNumbers
+                                                            .slice(
+                                                                Math.max(
+                                                                    0,
+                                                                    verseNumbers.indexOf(
+                                                                        noteAnchor.verseStart ??
+                                                                            '',
+                                                                    ),
+                                                                ),
+                                                            )
+                                                            .map((verse) => ({
+                                                                value: verse,
+                                                                label: `Verse ${verse}`,
+                                                            }))}
+                                                        triggerClassName="font-serif text-sm font-normal tracking-normal normal-case"
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                        <div className="mt-4">
+                                            <span className="mb-1.5 block font-sans text-xs font-semibold tracking-wide text-stone-500 uppercase">
+                                                Note
+                                            </span>
+                                            <NoteEditor
+                                                value={noteBody}
+                                                onChange={setNoteBody}
+                                                disabled={noteProcessing}
+                                                expanded={noteExpanded}
+                                            />
+                                            <p className="mt-2 font-sans text-xs text-stone-500">
+                                                Use the toolbar or Markdown
+                                                shortcuts such as{' '}
+                                                <code>##</code>,{' '}
+                                                <code>**bold**</code>, lists,
+                                                and quotes.
+                                            </p>
+                                        </div>
+                                        {noteError && (
+                                            <p
+                                                role="alert"
+                                                className="mt-4 text-sm text-red-700"
+                                            >
+                                                {noteError}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {noteMode !== 'list' && (
+                                <footer
+                                    className={`flex flex-wrap items-center gap-2 border-t border-stone-200 bg-stone-50/90 px-5 py-4 ${noteExpanded ? 'justify-end md:px-10 lg:px-16' : ''}`}
+                                >
+                                    <button
+                                        type="button"
+                                        disabled={noteProcessing}
+                                        onClick={saveNote}
+                                        className={`inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-positive px-5 py-3 font-serif text-sm font-semibold text-positive-foreground hover:bg-positive-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-positive disabled:opacity-55 ${noteExpanded ? 'min-w-40' : 'flex-1'}`}
+                                    >
+                                        <Save className="size-4" />{' '}
+                                        {noteProcessing
+                                            ? 'Saving…'
+                                            : 'Save note'}
+                                    </button>
+                                    {editingNote && (
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                removeNote(editingNote)
+                                            }
+                                            className="inline-flex cursor-pointer items-center gap-2 rounded-xl px-4 py-3 font-serif text-sm font-semibold text-red-700 hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-red-700"
+                                        >
+                                            <Trash2 className="size-4" /> Delete
+                                        </button>
+                                    )}
+                                </footer>
+                            )}
+                        </aside>
+                    </>
+                )}
+
+                {pendingHighlight && !highlightOpen && !noteOpen && (
                     <div
                         role="toolbar"
                         aria-label="Highlight selected text"
@@ -2444,6 +3491,26 @@ export default function Reader({
                             ),
                         }}
                     >
+                        <button
+                            type="button"
+                            onClick={() =>
+                                beginCreateNote({
+                                    type: 'selection',
+                                    selectedText: pendingHighlight.selectedText,
+                                    segments: pendingHighlight.segments,
+                                    verseStart:
+                                        pendingHighlight.segments[0]?.verse,
+                                    verseEnd:
+                                        pendingHighlight.segments.at(-1)?.verse,
+                                })
+                            }
+                            aria-label="Add a note to selected text"
+                            title="Add note"
+                            className="grid size-8 cursor-pointer place-items-center rounded-full text-stone-600 hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-[#9a5428]"
+                        >
+                            <NotebookPen className="size-4" />
+                        </button>
+                        <span className="h-5 w-px bg-stone-200" />
                         <Highlighter className="mx-1 size-4 text-stone-600" />
                         {highlightColors.map((color) => (
                             <button
@@ -2455,6 +3522,29 @@ export default function Reader({
                                 className={`size-8 rounded-full border-2 border-white shadow-sm ring-1 ring-black/20 transition hover:scale-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9a5428] disabled:opacity-50 ${color.className}`}
                             />
                         ))}
+                    </div>
+                )}
+
+                {selectionNotePreview && !noteOpen && !pendingHighlight && (
+                    <div
+                        role="tooltip"
+                        className="pointer-events-none fixed z-[70] w-80 rounded-2xl border border-stone-200 bg-[#fffdf9] p-4 text-stone-800 shadow-[0_14px_40px_rgba(41,37,36,0.24)]"
+                        style={{
+                            top: selectionNotePreview.position.top,
+                            left: selectionNotePreview.position.left,
+                        }}
+                    >
+                        <p className="font-sans text-[0.62rem] font-semibold tracking-[0.18em] text-[#9a5428] uppercase">
+                            Note on selected text
+                        </p>
+                        <p className="mt-1.5 font-serif text-base font-semibold text-stone-900">
+                            {selectionNotePreview.note.title}
+                        </p>
+                        <p className="mt-1.5 line-clamp-3 font-serif text-sm leading-5 text-stone-600">
+                            {notePreview(
+                                selectionNotePreview.note.bodyMarkdown,
+                            )}
+                        </p>
                     </div>
                 )}
             </div>

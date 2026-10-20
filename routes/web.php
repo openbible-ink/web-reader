@@ -1,9 +1,10 @@
 <?php
 
-use App\Http\Controllers\BookOverviewController;
 use App\Http\Controllers\BookmarkController;
+use App\Http\Controllers\BookOverviewController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HighlightController;
+use App\Http\Controllers\NoteController;
 use App\Http\Controllers\ReaderController;
 use Illuminate\Support\Facades\Route;
 
@@ -35,6 +36,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('highlights', [HighlightController::class, 'store'])->name('highlights.store');
     Route::patch('highlights/{highlight}', [HighlightController::class, 'update'])->name('highlights.update');
     Route::delete('highlights/{highlight}', [HighlightController::class, 'destroy'])->name('highlights.destroy');
+    Route::get('notes', [NoteController::class, 'index'])->name('notes.index');
+    Route::get('notes/{note}', [NoteController::class, 'show'])->name('notes.show');
+    Route::post('notes', [NoteController::class, 'store'])->name('notes.store');
+    Route::patch('notes/{note}', [NoteController::class, 'update'])->name('notes.update');
+    Route::delete('notes/{note}', [NoteController::class, 'destroy'])->name('notes.destroy');
 });
 
 require __DIR__.'/settings.php';

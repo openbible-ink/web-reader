@@ -19,6 +19,7 @@ void createInertiaApp({
                 name === 'dashboard' ||
                 name === 'bookmarks' ||
                 name === 'highlights' ||
+                name === 'note-show' ||
                 name === 'auth/login' ||
                 name === 'auth/register':
                 return null;
