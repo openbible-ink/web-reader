@@ -338,7 +338,7 @@ export default function Dashboard({
                         </div>
 
                         <div className="relative mt-4">
-                            <h1 className="font-serif text-[clamp(3.2rem,7vw,5.5rem)] leading-none tracking-[-0.06em] text-[#171813]">
+                            <h1 className="font-serif text-[clamp(3.2rem,7vw,5.5rem)] leading-none font-black tracking-[-0.06em] text-[#171813]">
                                 Dashboard
                             </h1>
                             <p className="mt-3 font-serif text-xl text-[#81786b] sm:text-2xl">

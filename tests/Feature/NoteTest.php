@@ -139,6 +139,43 @@ class NoteTest extends TestCase
         );
     }
 
+    public function test_section_notes_preserve_the_source_section_and_its_canonical_range(): void
+    {
+        $user = User::factory()->create();
+        $book = $this->book();
+        $payload = [
+            'bible_book_id' => $book->id,
+            'chapter' => '1',
+            'anchor_type' => 'section',
+            'title' => 'The Preparation',
+            'body_markdown' => 'A note about this editorial section.',
+            'section_key' => 'n_000105',
+            'section_title' => 'The Preparation',
+            'verse_start' => '19',
+            'verse_end' => '34',
+            'segments' => [],
+        ];
+
+        $this->actingAs($user)->post('/notes', $payload)->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('notes', [
+            'bible_book_id' => $book->id,
+            'book_code' => 'JHN',
+            'anchor_type' => 'section',
+            'section_key' => 'n_000105',
+            'section_title' => 'The Preparation',
+            'verse_start' => '19',
+            'verse_end' => '34',
+        ]);
+
+        $this->actingAs($user)->post('/notes', [
+            ...$payload,
+            'section_key' => null,
+            'verse_start' => null,
+            'verse_end' => null,
+        ])->assertSessionHasErrors(['section_key', 'verse_start', 'verse_end']);
+    }
+
     public function test_note_index_provides_books_for_structured_note_creation(): void
     {
         $user = User::factory()->create();

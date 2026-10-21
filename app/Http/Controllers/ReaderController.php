@@ -62,7 +62,8 @@ class ReaderController extends Controller
             ->where(fn ($query) => $query
                 ->whereNull('edition_id')
                 ->orWhere('edition_id', $edition->id))
-            ->orderByRaw('edition_id is null')
+            ->orderByRaw('case when edition_id = ? then 0 else 1 end', [$edition->id])
+            ->orderByRaw('case when section_key is not null then 0 when verse_start is not null then 1 when chapter is not null then 2 else 3 end')
             ->orderBy('sort_order')
             ->get();
 

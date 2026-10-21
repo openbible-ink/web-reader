@@ -31,7 +31,7 @@ export default function BookOverview({ edition, book }: BookOverviewProps) {
                     <p className="mt-10 text-xs font-semibold tracking-[0.28em] uppercase">
                         {longNamePrefix ?? 'Book overview'}
                     </p>
-                    <h1 className="mt-2 font-serif text-7xl font-semibold tracking-tight">
+                    <h1 className="mt-2 font-serif text-7xl font-black tracking-tight">
                         {book.name}
                     </h1>
                     <p className="mt-7 max-w-lg text-stone-600">

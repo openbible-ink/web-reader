@@ -35,7 +35,7 @@ export default function Login({ status, canResetPassword }: Props) {
             >
                 <div className="my-auto">
                     <header className="mb-7">
-                        <h1 className="font-serif text-[clamp(2.7rem,5vw,4rem)] leading-[0.98] tracking-[-0.045em] text-[#171815]">
+                        <h1 className="font-serif text-[clamp(2.7rem,5vw,4rem)] leading-[0.98] font-black tracking-[-0.045em] text-[#171815]">
                             Welcome back
                         </h1>
                         <p className="mt-4 max-w-[380px] font-serif text-[17px] leading-7 text-[#716c64]">

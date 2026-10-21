@@ -272,7 +272,7 @@ export default function NoteShow({
                             <p className="font-sans text-[0.64rem] font-semibold tracking-[0.26em] text-[#8f6e42] uppercase">
                                 Personal note · {edition.abbreviation}
                             </p>
-                            <h1 className="mx-auto mt-5 max-w-3xl font-serif text-4xl leading-[1.04] tracking-[-0.035em] text-[#171815] sm:text-6xl">
+                            <h1 className="mx-auto mt-5 max-w-3xl font-serif text-4xl leading-[1.04] font-black tracking-[-0.035em] text-[#171815] sm:text-6xl">
                                 {note.title}
                             </h1>
                             <div className="relative mt-6 inline-block">

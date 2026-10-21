@@ -36,6 +36,7 @@ import type {
     FlowNode,
     InlineNode,
     NoteFieldNode,
+    NoteNode,
 } from 'usfm-parser';
 import { parseUsfm } from 'usfm-parser';
 import { parseOeb, type OebVariantOptions } from 'usfm-parser/oeb';
@@ -178,6 +179,11 @@ interface PendingHighlight {
 interface SelectionNotePreview {
     note: ScriptureNote;
     position: { top: number; left: number };
+}
+
+interface FootnotePreview {
+    note: NoteNode;
+    position: { top: number; left: number; placement: 'above' | 'below' };
 }
 
 type ReadingItem =
@@ -412,6 +418,8 @@ const defaultTypography: TypographyPreferences = {
     theme: 'light',
 };
 const typographyPreferencesKey = 'bible-reader:typography';
+const chapterNavigationPositionKey =
+    'open-bible:chapter-navigation-reader-docked';
 const documentCache = new Map<string, BibleDocument>();
 const maximumCachedDocuments = 32;
 
@@ -463,7 +471,24 @@ function noteText(fields: NoteFieldNode[]): string {
         .join(' ');
 }
 
-function renderInline(node: InlineNode): ReactNode {
+function noteBodyText(fields: NoteFieldNode[]): string {
+    return noteText(
+        fields.filter((field) => field.style !== 'fr' && field.style !== 'xo'),
+    );
+}
+
+function inlineNotes(nodes: InlineNode[]): NoteNode[] {
+    return nodes.flatMap((node) => {
+        if (node.type === 'note') return [node];
+        if (node.type === 'inline') return inlineNotes(node.children);
+        return [];
+    });
+}
+
+function renderInline(
+    node: InlineNode,
+    onFootnoteClick?: (note: NoteNode, trigger: HTMLButtonElement) => void,
+): ReactNode {
     switch (node.type) {
         case 'text':
             return node.value;
@@ -471,7 +496,9 @@ function renderInline(node: InlineNode): ReactNode {
             return null;
         case 'inline': {
             const content = node.children.map((child) => (
-                <Fragment key={child.id}>{renderInline(child)}</Fragment>
+                <Fragment key={child.id}>
+                    {renderInline(child, onFootnoteClick)}
+                </Fragment>
             ));
             if (node.style === 'nd')
                 return (
@@ -485,9 +512,13 @@ function renderInline(node: InlineNode): ReactNode {
             return (
                 <button
                     type="button"
-                    title={noteText(node.children)}
+                    data-footnote-trigger
                     aria-label={`Footnote: ${noteText(node.children)}`}
-                    className="mx-0.5 cursor-pointer rounded-sm align-super font-sans text-[0.48em] font-semibold text-[var(--reader-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--reader-accent)]"
+                    aria-haspopup="dialog"
+                    onClick={(event) =>
+                        onFootnoteClick?.(node, event.currentTarget)
+                    }
+                    className="mx-0.5 cursor-pointer rounded-sm align-super font-serif text-[0.78em] leading-none font-black text-[var(--reader-accent)] transition-transform hover:scale-115 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--reader-accent)]"
                 >
                     {node.caller === '+' ? '†' : (node.caller ?? '†')}
                 </button>
@@ -497,7 +528,10 @@ function renderInline(node: InlineNode): ReactNode {
     }
 }
 
-function renderInlineSequence(nodes: InlineNode[]): ReactNode {
+function renderInlineSequence(
+    nodes: InlineNode[],
+    onFootnoteClick?: (note: NoteNode, trigger: HTMLButtonElement) => void,
+): ReactNode {
     return nodes.map((node, index) => {
         const previous = nodes[index - 1];
         const needsSpace =
@@ -510,10 +544,32 @@ function renderInlineSequence(nodes: InlineNode[]): ReactNode {
         return (
             <Fragment key={node.id}>
                 {needsSpace && ' '}
-                {renderInline(node)}
+                {renderInline(node, onFootnoteClick)}
             </Fragment>
         );
     });
+}
+
+function renderVerseContent(
+    nodes: InlineNode[],
+    onFootnoteClick?: (note: NoteNode, trigger: HTMLButtonElement) => void,
+): ReactNode {
+    const notes = inlineNotes(nodes);
+    if (inlinePlainText(nodes) || notes.length === 0) {
+        return renderInlineSequence(nodes, onFootnoteClick);
+    }
+
+    return notes.map((note) => (
+        <span
+            key={note.id}
+            className="block border-l-2 border-[var(--reader-accent)]/45 pl-3 font-sans text-[0.72em] leading-relaxed italic opacity-75"
+        >
+            <span className="mr-1.5 font-semibold not-italic">
+                Textual note:
+            </span>
+            {noteBodyText(note.children)}
+        </span>
+    ));
 }
 
 function inlinePlainText(nodes: InlineNode[]): string {
@@ -913,6 +969,7 @@ export default function Reader({
     const [highlightProcessing, setHighlightProcessing] = useState(false);
     const [selectionNotePreview, setSelectionNotePreview] =
         useState<SelectionNotePreview>();
+    const [footnotePreview, setFootnotePreview] = useState<FootnotePreview>();
     const [noteOpen, setNoteOpen] = useState(false);
     const [noteClosing, setNoteClosing] = useState(false);
     const [noteExpanded, setNoteExpanded] = useState(false);
@@ -935,8 +992,10 @@ export default function Reader({
     const outlineRef = useRef<HTMLDivElement>(null);
     const bookmarkRef = useRef<HTMLDivElement>(null);
     const highlightRef = useRef<HTMLDivElement>(null);
+    const footnoteRef = useRef<HTMLDivElement>(null);
     const heroArtworkRef = useRef<HTMLDivElement>(null);
     const heroTextRef = useRef<HTMLDivElement>(null);
+    const readerMainRef = useRef<HTMLElement>(null);
     const readerArticleRef = useRef<HTMLElement>(null);
     const closeNoteDrawer = useCallback(() => {
         if (noteClosing) return;
@@ -1019,6 +1078,7 @@ export default function Reader({
             !outlineOpen &&
             !bookmarkOpen &&
             !highlightOpen &&
+            !footnotePreview &&
             !noteOpen
         )
             return;
@@ -1038,6 +1098,7 @@ export default function Reader({
             setOutlineOpen(false);
             setBookmarkOpen(false);
             setHighlightOpen(false);
+            setFootnotePreview(undefined);
             closeNoteDrawer();
         };
         const dismissOnOutsidePointer = (event: PointerEvent) => {
@@ -1062,6 +1123,16 @@ export default function Reader({
             if (highlightOpen && !highlightRef.current?.contains(target)) {
                 setHighlightOpen(false);
             }
+            if (
+                footnotePreview &&
+                !footnoteRef.current?.contains(target) &&
+                !(
+                    target instanceof Element &&
+                    target.closest('[data-footnote-trigger]')
+                )
+            ) {
+                setFootnotePreview(undefined);
+            }
         };
 
         window.document.addEventListener('keydown', dismissOnEscape);
@@ -1080,6 +1151,7 @@ export default function Reader({
         bookmarkOpen,
         closeNoteDrawer,
         editionPreferencesOpen,
+        footnotePreview,
         highlightOpen,
         noteOpen,
         noteExpanded,
@@ -1087,6 +1159,37 @@ export default function Reader({
         outlineOpen,
         typographyOpen,
     ]);
+
+    const openFootnote = useCallback(
+        (note: NoteNode, trigger: HTMLButtonElement) => {
+            if (footnotePreview?.note.id === note.id) {
+                setFootnotePreview(undefined);
+                return;
+            }
+
+            const rect = trigger.getBoundingClientRect();
+            const placement =
+                window.innerHeight - rect.bottom < 190 ? 'above' : 'below';
+            setFootnotePreview({
+                note,
+                position: {
+                    top:
+                        placement === 'below'
+                            ? rect.bottom + 10
+                            : rect.top - 10,
+                    left: Math.max(
+                        176,
+                        Math.min(
+                            rect.left + rect.width / 2,
+                            window.innerWidth - 176,
+                        ),
+                    ),
+                    placement,
+                },
+            });
+        },
+        [footnotePreview?.note.id],
+    );
 
     useEffect(() => {
         const updateSelection = () => {
@@ -1366,6 +1469,55 @@ export default function Reader({
     }, [noteOpen]);
     const chapterIndex = chapters.indexOf(chapter);
     useEffect(() => {
+        if (
+            window.sessionStorage.getItem(chapterNavigationPositionKey) !==
+            'true'
+        ) {
+            return;
+        }
+
+        window.sessionStorage.removeItem(chapterNavigationPositionKey);
+        const alignmentTimer = window.setTimeout(() => {
+            const readerTop = readerMainRef.current?.offsetTop;
+            if (readerTop === undefined) return;
+            window.scrollTo({ top: readerTop, behavior: 'auto' });
+
+            if (
+                window.document.documentElement.dataset
+                    .chapterTransitionFallback === 'true'
+            ) {
+                const direction =
+                    window.document.documentElement.dataset
+                        .chapterTransitionDirection === 'backward'
+                        ? 'backward'
+                        : 'forward';
+                delete window.document.documentElement.dataset
+                    .chapterTransitionFallback;
+
+                const entrance = readerArticleRef.current?.animate(
+                    [
+                        {
+                            opacity: 0,
+                            transform: `translateX(${direction === 'forward' ? '3rem' : '-3rem'})`,
+                        },
+                        { opacity: 1, transform: 'translateX(0)' },
+                    ],
+                    {
+                        duration: 240,
+                        easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+                        fill: 'both',
+                    },
+                );
+                void entrance?.finished.finally(() => {
+                    delete window.document.documentElement.dataset
+                        .chapterTransitionDirection;
+                });
+            }
+        }, 50);
+
+        return () => window.clearTimeout(alignmentTimer);
+    }, [book.code, chapter]);
+    useEffect(() => {
         setTargetSectionKey(focusedSectionKey ?? null);
     }, [book.code, chapter, focusedSectionKey]);
     const chapterArtwork = useMemo(() => {
@@ -1461,6 +1613,50 @@ export default function Reader({
         value: TypographyPreferences[Key],
     ) => setTypography((current) => ({ ...current, [key]: value }));
     const changeChapter = (nextChapter: string) => {
+        const keepReaderDocked =
+            (readerMainRef.current?.getBoundingClientRect().top ?? 2) <= 1;
+        const direction =
+            Number(nextChapter) < Number(chapter) ? 'backward' : 'forward';
+        if (
+            keepReaderDocked &&
+            !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        ) {
+            window.sessionStorage.setItem(chapterNavigationPositionKey, 'true');
+            window.document.documentElement.dataset.chapterTransitionDirection =
+                direction;
+
+            const exit = readerArticleRef.current?.animate(
+                [
+                    { opacity: 1, transform: 'translateX(0)' },
+                    {
+                        opacity: 0,
+                        transform: `translateX(${direction === 'forward' ? '-3rem' : '3rem'})`,
+                    },
+                ],
+                { duration: 170, easing: 'ease-in', fill: 'both' },
+            );
+            const navigate = () => {
+                window.document.documentElement.dataset.chapterTransitionFallback =
+                    'true';
+                router.visit(`/read/${book.code}/${nextChapter}`, {
+                    preserveScroll: true,
+                });
+            };
+
+            if (exit) {
+                void exit.finished.finally(navigate);
+            } else {
+                navigate();
+            }
+            return;
+        }
+
+        if (keepReaderDocked) {
+            window.sessionStorage.setItem(chapterNavigationPositionKey, 'true');
+        } else {
+            window.sessionStorage.removeItem(chapterNavigationPositionKey);
+        }
+
         router.visit(`/read/${book.code}/${nextChapter}`, {
             preserveScroll: false,
         });
@@ -2185,7 +2381,7 @@ export default function Reader({
                         <p className="max-w-52 text-[0.72rem] font-semibold tracking-[0.3em] uppercase">
                             {longNamePrefix ?? book.name}
                         </p>
-                        <h1 className="mt-2 font-serif text-[4.4rem] leading-none font-semibold tracking-[-0.04em] lg:text-[4.8rem]">
+                        <h1 className="mt-2 font-serif text-[4.4rem] leading-none font-black tracking-[-0.04em] lg:text-[4.8rem]">
                             {book.name}
                         </h1>
                         <div className="mt-5 h-0.5 w-16 bg-[#bd6b32]" />
@@ -2196,6 +2392,8 @@ export default function Reader({
                 </section>
 
                 <main
+                    ref={readerMainRef}
+                    data-reader-main
                     className={`relative z-20 -mt-7 min-h-screen rounded-t-[2rem] shadow-[0_-8px_30px_rgba(62,49,30,0.06)] lg:rounded-t-[1.8rem] ${readerSurface}`}
                     style={
                         {
@@ -3034,6 +3232,7 @@ export default function Reader({
 
                         <article
                             ref={readerArticleRef}
+                            data-reader-chapter-content
                             className="pt-8 font-serif"
                             style={{
                                 fontSize: articleFontSize,
@@ -3062,7 +3261,10 @@ export default function Reader({
                                         <h2
                                             className={`font-sans text-[0.68rem] font-semibold tracking-[0.29em] uppercase ${readerMutedText}`}
                                         >
-                                            {renderInlineSequence(item.content)}
+                                            {renderInlineSequence(
+                                                item.content,
+                                                openFootnote,
+                                            )}
                                         </h2>
                                         {notesForSection(item).length > 0 && (
                                             <NoteMarker
@@ -3075,34 +3277,39 @@ export default function Reader({
                                         )}
                                     </div>
                                 ) : (
-                                    <div
-                                        key={item.key}
-                                        className="group/verse grid grid-cols-[4.5rem_1.5rem_minmax(0,1fr)_2.75rem] items-start gap-x-2 py-1.5"
-                                    >
-                                        <span>
-                                            {item.number === '1' && (
+                                    <Fragment key={item.key}>
+                                        {item.number === '1' && (
+                                            <div className="pointer-events-none sticky top-[6.4rem] z-10 h-0 w-[4.5rem]">
                                                 <span
                                                     className={`-mt-1 block font-serif leading-none text-[var(--reader-accent)] ${chapter.length >= 3 ? 'text-[2.75rem]' : 'text-[3.5rem]'}`}
                                                 >
                                                     {chapter}
                                                 </span>
-                                            )}
-                                        </span>
-                                        <span
-                                            className={`pt-1 text-right text-sm tabular-nums ${readerMutedText}`}
-                                        >
-                                            {item.number}
-                                        </span>
-                                        <p data-verse-number={item.number}>
-                                            {renderInlineSequence(item.content)}
-                                        </p>
-                                        <NoteMarker
-                                            notes={notesForVerse(item.number)}
-                                            onClick={() =>
-                                                openNotesAt(item.number)
-                                            }
-                                        />
-                                    </div>
+                                            </div>
+                                        )}
+                                        <div className="group/verse grid grid-cols-[4.5rem_1.5rem_minmax(0,1fr)_2.75rem] items-start gap-x-2 py-1.5">
+                                            <span aria-hidden="true" />
+                                            <span
+                                                className={`pt-1 text-right text-sm tabular-nums ${readerMutedText}`}
+                                            >
+                                                {item.number}
+                                            </span>
+                                            <p data-verse-number={item.number}>
+                                                {renderVerseContent(
+                                                    item.content,
+                                                    openFootnote,
+                                                )}
+                                            </p>
+                                            <NoteMarker
+                                                notes={notesForVerse(
+                                                    item.number,
+                                                )}
+                                                onClick={() =>
+                                                    openNotesAt(item.number)
+                                                }
+                                            />
+                                        </div>
+                                    </Fragment>
                                 ),
                             )}
                         </article>
@@ -3610,6 +3817,45 @@ export default function Reader({
                             {notePreview(
                                 selectionNotePreview.note.bodyMarkdown,
                             )}
+                        </p>
+                    </div>
+                )}
+
+                {footnotePreview && !noteOpen && (
+                    <div
+                        ref={footnoteRef}
+                        role="dialog"
+                        aria-label="Footnote"
+                        className={`fixed z-[72] w-[min(22rem,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-stone-200 bg-[#fffdf9] p-4 text-stone-800 shadow-[0_14px_40px_rgba(41,37,36,0.24)] ${footnotePreview.position.placement === 'above' ? '-translate-y-full' : ''}`}
+                        style={{
+                            top: footnotePreview.position.top,
+                            left: footnotePreview.position.left,
+                        }}
+                    >
+                        <div className="flex items-start justify-between gap-4">
+                            <div>
+                                <p className="font-sans text-[0.62rem] font-semibold tracking-[0.18em] text-[#9a5428] uppercase">
+                                    Footnote
+                                </p>
+                                <p className="mt-1 font-sans text-xs text-stone-500">
+                                    {noteText(
+                                        footnotePreview.note.children.filter(
+                                            (field) => field.style === 'fr',
+                                        ),
+                                    )}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                aria-label="Close footnote"
+                                onClick={() => setFootnotePreview(undefined)}
+                                className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full text-stone-500 hover:bg-stone-100 hover:text-stone-950 focus-visible:outline-2 focus-visible:outline-[#9a5428]"
+                            >
+                                <X className="size-4" />
+                            </button>
+                        </div>
+                        <p className="mt-3 font-serif text-base leading-6 text-stone-800">
+                            {noteBodyText(footnotePreview.note.children)}
                         </p>
                     </div>
                 )}

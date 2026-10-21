@@ -66,7 +66,7 @@ export default function Bookmarks({
                     </Link>
                     <div className="flex items-end justify-between gap-5">
                         <div>
-                            <h1 className="font-serif text-5xl tracking-[-0.045em] sm:text-6xl">
+                            <h1 className="font-serif text-5xl font-black tracking-[-0.045em] sm:text-6xl">
                                 Bookmarks
                             </h1>
                             <p className="mt-3 font-serif text-lg text-[#7b7368]">

@@ -58,7 +58,7 @@ export default function Register({ passwordRules }: Props) {
             >
                 <div className="my-auto">
                     <header className="mb-8">
-                        <h1 className="max-w-[420px] font-serif text-[clamp(2.75rem,5vw,4.15rem)] leading-[0.95] tracking-[-0.05em] text-[#171815]">
+                        <h1 className="max-w-[420px] font-serif text-[clamp(2.75rem,5vw,4.15rem)] leading-[0.95] font-black tracking-[-0.05em] text-[#171815]">
                             Create your account
                         </h1>
                         <p className="mt-5 max-w-[420px] font-serif text-[17px] leading-7 text-[#716c64]">

@@ -31,6 +31,23 @@ class ScriptureArtworkPassage extends Model
         'sort_order',
     ];
 
+    protected static function booted(): void
+    {
+        static::saving(function (self $placement): void {
+            if (blank($placement->section_key)) {
+                return;
+            }
+
+            if (blank($placement->edition_id)) {
+                throw new \LogicException('Section artwork must belong to a specific Bible edition.');
+            }
+
+            if (blank($placement->chapter) || blank($placement->verse_start) || blank($placement->verse_end)) {
+                throw new \LogicException('Section artwork must include its canonical chapter and verse range.');
+            }
+        });
+    }
+
     /** @return BelongsTo<ScriptureArtwork, $this> */
     public function artwork(): BelongsTo
     {

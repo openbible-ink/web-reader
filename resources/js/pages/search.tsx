@@ -20,7 +20,7 @@ export default function Search() {
                     </div>
                     <section className="mt-24 rounded-[2rem] bg-[#fffdf9] p-8 shadow-[0_22px_70px_-42px_rgba(41,37,36,0.45)] sm:p-12">
                         <SearchIcon className="size-7 text-[#a95624]" />
-                        <h1 className="mt-5 font-serif text-5xl font-semibold tracking-tight">
+                        <h1 className="mt-5 font-serif text-5xl font-black tracking-tight">
                             Search
                         </h1>
                         <p className="mt-4 max-w-lg text-stone-600">
