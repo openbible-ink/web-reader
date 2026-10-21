@@ -31,7 +31,7 @@ class ScriptureArtworkTest extends TestCase
             'role' => 'hero',
         ]);
 
-        $this->get(route('reader.show', [$edition, $book, '1']))
+        $this->get(route('reader.show', ['book' => 'JHN', 'chapter' => '1']))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('reader')
@@ -48,11 +48,38 @@ class ScriptureArtworkTest extends TestCase
     {
         [$edition, $book] = $this->john();
 
-        $this->get(route('reader.show', [$edition, $book, '1']))
+        $this->get(route('reader.show', ['book' => 'JHN', 'chapter' => '1']))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('reader')
                 ->has('artworks', 0));
+    }
+
+    public function test_section_artwork_and_section_target_are_sent_to_the_reader(): void
+    {
+        [$edition, $book] = $this->john();
+        $artwork = ScriptureArtwork::query()->create([
+            'image_path' => '/images/scripture/preparation.png',
+            'title' => 'The Preparation',
+            'alt_text' => 'Artwork for the preparation section.',
+            'approach' => 'narrative',
+        ]);
+        $artwork->passages()->create([
+            'book_code' => 'JHN',
+            'chapter' => '1',
+            'section_key' => 'n_000105',
+            'verse_start' => '19',
+            'verse_end' => '34',
+            'role' => 'hero',
+        ]);
+
+        $this->get(route('reader.show', ['book' => 'JHN', 'chapter' => '1', 'section' => 'the-preparation']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('focusedSectionKey', 'the-preparation')
+                ->where('artworks.0.reference.sectionKey', 'n_000105')
+                ->where('artworks.0.reference.verseStart', '19')
+                ->where('artworks.0.reference.verseEnd', '34'));
     }
 
     /** @return array{BibleEdition, BibleBook} */

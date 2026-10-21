@@ -56,6 +56,7 @@ interface ScriptureArtwork {
     reference: {
         book: string;
         chapter?: string | null;
+        sectionKey?: string | null;
         verseStart?: string | null;
         verseEnd?: string | null;
     };
@@ -96,11 +97,18 @@ interface ReaderProps {
         chapterCount: number;
     };
     chapter: string;
+    focusedSectionKey?: string | null;
     availableEditions: Array<{
         slug: string;
         name: string;
         abbreviation: string;
         bookCode: string;
+    }>;
+    libraryBooks: Array<{
+        code: string;
+        name: string;
+        testament: 'old' | 'new';
+        readerUrl: string;
     }>;
     artworks?: ScriptureArtwork[];
     bookmarks?: ChapterBookmark[];
@@ -178,6 +186,7 @@ type ReadingItem =
 
 interface OutlineItem {
     key: string;
+    slug: string;
     title: string;
     verseStart?: string;
     verseEnd?: string;
@@ -390,35 +399,6 @@ function rangeForHighlightSegment(
     return range;
 }
 
-const newTestamentBooks = [
-    'Matthew',
-    'Mark',
-    'Luke',
-    'John',
-    'Acts',
-    'Romans',
-    '1 Corinthians',
-    '2 Corinthians',
-    'Galatians',
-    'Ephesians',
-    'Philippians',
-    'Colossians',
-    '1 Thessalonians',
-    '2 Thessalonians',
-    '1 Timothy',
-    '2 Timothy',
-    'Titus',
-    'Philemon',
-    'Hebrews',
-    'James',
-    '1 Peter',
-    '2 Peter',
-    '1 John',
-    '2 John',
-    '3 John',
-    'Jude',
-    'Revelation',
-];
 const defaultPreferences: OebVariantOptions = {
     spelling: 'cth',
     gender: 'neut',
@@ -651,8 +631,21 @@ function focusedReadingItems(
 }
 
 function chapterOutline(items: ReadingItem[]): OutlineItem[] {
+    const slugs = new Map<string, number>();
+
     return items.flatMap((item, index) => {
         if (item.kind !== 'heading') return [];
+
+        const title = inlinePlainText(item.content);
+        const baseSlug =
+            title
+                .normalize('NFKD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '') || 'section';
+        const occurrence = (slugs.get(baseSlug) ?? 0) + 1;
+        slugs.set(baseSlug, occurrence);
 
         const verses: string[] = [];
         for (const following of items.slice(index + 1)) {
@@ -663,7 +656,8 @@ function chapterOutline(items: ReadingItem[]): OutlineItem[] {
         return [
             {
                 key: item.key,
-                title: inlinePlainText(item.content),
+                slug: occurrence === 1 ? baseSlug : `${baseSlug}-${occurrence}`,
+                title,
                 verseStart: verses.at(0),
                 verseEnd: verses.at(-1),
             },
@@ -749,10 +743,10 @@ function DashboardIcon({
             className={className}
             aria-hidden="true"
         >
-            <rect x="3" y="3" width="8" height="5" rx="1.6" />
-            <rect x="13" y="3" width="8" height="10" rx="1.6" />
-            <rect x="3" y="10" width="8" height="11" rx="1.6" />
-            <rect x="13" y="15" width="8" height="6" rx="1.6" />
+            <rect x="3" y="3" width="7.5" height="4.5" rx="0.8" />
+            <rect x="13.5" y="3" width="7.5" height="9.5" rx="0.8" />
+            <rect x="3" y="10.5" width="7.5" height="10.5" rx="0.8" />
+            <rect x="13.5" y="15.5" width="7.5" height="5.5" rx="0.8" />
         </svg>
     );
 }
@@ -779,10 +773,12 @@ function Brand() {
 }
 
 function Library({
-    activeBook,
+    activeBookCode,
+    books,
     close,
 }: {
-    activeBook: string;
+    activeBookCode: string;
+    books: ReaderProps['libraryBooks'];
     close?: () => void;
 }) {
     const navItems = [
@@ -833,20 +829,34 @@ function Library({
             </nav>
             <div className="mx-10 my-5 border-t border-stone-200" />
             <div className="min-h-0 flex-1 overflow-y-auto px-8 pb-10">
-                <p className="mb-3 text-[0.63rem] font-semibold tracking-[0.26em] text-stone-500 uppercase">
-                    New Testament
-                </p>
-                <div className="font-serif text-[0.93rem] leading-[1.9] text-stone-600">
-                    {newTestamentBooks.map((book) => (
-                        <button
-                            type="button"
-                            key={book}
-                            className={`block w-full rounded-lg px-1 text-left ${book === activeBook ? 'font-semibold text-stone-950' : 'hover:text-stone-950'}`}
-                        >
-                            {book}
-                        </button>
-                    ))}
-                </div>
+                {(['old', 'new'] as const).map((testament) => {
+                    const testamentBooks = books.filter(
+                        (book) => book.testament === testament,
+                    );
+                    if (testamentBooks.length === 0) return null;
+
+                    return (
+                        <section key={testament}>
+                            <p className="sticky top-0 z-10 mb-2 bg-[#faf8f3] py-2 text-[0.63rem] font-semibold tracking-[0.26em] text-stone-500 uppercase">
+                                {testament === 'old'
+                                    ? 'Old Testament'
+                                    : 'New Testament'}
+                            </p>
+                            <div className="mb-4 font-serif text-[0.93rem] leading-[1.9] text-stone-600">
+                                {testamentBooks.map((libraryBook) => (
+                                    <Link
+                                        key={libraryBook.code}
+                                        href={libraryBook.readerUrl}
+                                        onClick={close}
+                                        className={`block w-full rounded-lg px-1 text-left ${libraryBook.code === activeBookCode ? 'font-semibold text-stone-950' : 'hover:text-stone-950'}`}
+                                    >
+                                        {libraryBook.name}
+                                    </Link>
+                                ))}
+                            </div>
+                        </section>
+                    );
+                })}
             </div>
         </div>
     );
@@ -856,7 +866,9 @@ export default function Reader({
     edition,
     book,
     chapter,
+    focusedSectionKey,
     availableEditions: _availableEditions,
+    libraryBooks,
     artworks = [],
     bookmarks = [],
     focusedBookmark,
@@ -882,6 +894,9 @@ export default function Reader({
     const [editionPreferencesOpen, setEditionPreferencesOpen] = useState(false);
     const [typographyOpen, setTypographyOpen] = useState(false);
     const [outlineOpen, setOutlineOpen] = useState(false);
+    const [targetSectionKey, setTargetSectionKey] = useState(
+        focusedSectionKey ?? null,
+    );
     const [bookmarkOpen, setBookmarkOpen] = useState(false);
     const [bookmarkMode, setBookmarkMode] = useState<
         'create' | 'edit' | 'list'
@@ -1139,6 +1154,15 @@ export default function Reader({
         [focusedBookmark, fullContent],
     );
     const outline = useMemo(() => chapterOutline(content), [content]);
+    const targetSection = useMemo(
+        () =>
+            outline.find(
+                (section) =>
+                    section.key === targetSectionKey ||
+                    section.slug === targetSectionKey,
+            ),
+        [outline, targetSectionKey],
+    );
     const verseNumbers = useMemo(
         () =>
             fullContent.flatMap((item) =>
@@ -1341,12 +1365,39 @@ export default function Reader({
         if (noteOpen) setSelectionNotePreview(undefined);
     }, [noteOpen]);
     const chapterIndex = chapters.indexOf(chapter);
-    const chapterArtwork = useMemo(
-        () =>
-            artworks.find((item) => item.reference.chapter === chapter) ??
-            artworks.find((item) => item.reference.chapter == null),
-        [artworks, chapter],
-    );
+    useEffect(() => {
+        setTargetSectionKey(focusedSectionKey ?? null);
+    }, [book.code, chapter, focusedSectionKey]);
+    const chapterArtwork = useMemo(() => {
+        const sectionArtwork = targetSection
+            ? artworks.find(
+                  (item) =>
+                      item.reference.chapter === chapter &&
+                      (item.reference.sectionKey === targetSection.key ||
+                          (!item.reference.sectionKey &&
+                              item.reference.verseStart ===
+                                  targetSection.verseStart &&
+                              item.reference.verseEnd ===
+                                  targetSection.verseEnd)),
+              )
+            : undefined;
+        const chapterDefault = artworks.find(
+            (item) =>
+                item.reference.chapter === chapter &&
+                !item.reference.sectionKey &&
+                !item.reference.verseStart &&
+                !item.reference.verseEnd,
+        );
+        const bookDefault = artworks.find(
+            (item) =>
+                item.reference.chapter == null &&
+                !item.reference.sectionKey &&
+                !item.reference.verseStart &&
+                !item.reference.verseEnd,
+        );
+
+        return sectionArtwork ?? chapterDefault ?? bookDefault;
+    }, [artworks, chapter, targetSection]);
     const imagePosition = chapterArtwork
         ? `${chapterArtwork.focalPoint?.x ?? 50}% ${chapterArtwork.focalPoint?.y ?? 50}%`
         : undefined;
@@ -1410,15 +1461,19 @@ export default function Reader({
         value: TypographyPreferences[Key],
     ) => setTypography((current) => ({ ...current, [key]: value }));
     const changeChapter = (nextChapter: string) => {
-        router.visit(`/read/${edition.slug}/${book.code}/${nextChapter}`, {
+        router.visit(`/read/${book.code}/${nextChapter}`, {
             preserveScroll: false,
         });
     };
-    const navigateToSection = (key: string) => {
+    const navigateToSection = (section: OutlineItem) => {
         setOutlineOpen(false);
+        setTargetSectionKey(section.key);
+        const url = new URL(window.location.href);
+        url.searchParams.set('section', section.slug);
+        window.history.replaceState(window.history.state, '', url);
         window.requestAnimationFrame(() => {
             window.document
-                .getElementById(`section-${key}`)
+                .getElementById(`section-${section.key}`)
                 ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
     };
@@ -1868,6 +1923,15 @@ export default function Reader({
               : 'border-stone-200 bg-[#fffdf9]/95';
     const readerControl = `cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--reader-accent)] ${typography.theme === 'dark' ? 'hover:bg-white/12' : 'hover:bg-black/6'}`;
     const readerBorderedControl = `${readerControl} ${typography.theme === 'dark' ? 'border-stone-600' : 'border-stone-300'}`;
+    const readerPanelControl = `${readerControl} border transition-[background-color,border-color]`;
+    const readerPanelControlState = (open: boolean) =>
+        open
+            ? typography.theme === 'dark'
+                ? 'border-stone-500 bg-white/8'
+                : typography.theme === 'sepia'
+                  ? 'border-[#c8b18e] bg-black/[0.035]'
+                  : 'border-stone-300 bg-black/[0.035]'
+            : 'border-transparent';
     const readerMutedText =
         typography.theme === 'dark' ? 'text-stone-400' : 'text-stone-500';
     const readerDivider =
@@ -1916,7 +1980,7 @@ export default function Reader({
             <Head title={`${book.name} ${chapter} — ${edition.name}`} />
             <div className="min-h-screen bg-[#eee9df] text-[#25221e] lg:pl-[15rem]">
                 <aside className="fixed inset-y-0 left-0 z-40 hidden w-[15rem] border-r border-stone-200 lg:block">
-                    <Library activeBook={book.name} />
+                    <Library activeBookCode={book.code} books={libraryBooks} />
                 </aside>
 
                 <header className="absolute top-0 right-0 left-0 z-30 flex items-center justify-between px-6 py-5 lg:left-[15rem] lg:justify-end lg:px-12">
@@ -2144,11 +2208,11 @@ export default function Reader({
                 >
                     <div className="mx-auto max-w-[52rem] px-7 pb-24 sm:px-12 lg:px-14">
                         <div
-                            className={`sticky top-0 z-20 flex h-[5.4rem] items-center justify-between border-b backdrop-blur ${readerHeaderSurface}`}
+                            className={`sticky top-0 z-20 -mx-2 flex h-[5.4rem] items-center justify-between border-b px-2 backdrop-blur-[2px] ${readerHeaderSurface}`}
                         >
                             <div className="flex items-center gap-3">
                                 <Link
-                                    href={`/books/${edition.slug}/${book.code}`}
+                                    href={`/books/${book.code}`}
                                     aria-label={`Back to ${book.name} overview`}
                                     className={`grid size-9 place-items-center rounded-full ${readerControl}`}
                                 >
@@ -2160,10 +2224,12 @@ export default function Reader({
                                     onChange={changeChapter}
                                     options={chapters.map((number) => ({
                                         value: number,
-                                        label: `${book.name} ${number}`,
+                                        label: number,
+                                        triggerLabel: `${book.name} ${number}`,
                                     }))}
                                     theme={typography.theme}
                                     variant="inline"
+                                    layout="chapter-grid"
                                     className="font-serif text-lg font-semibold"
                                     triggerClassName="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--reader-accent)] focus-visible:ring-0"
                                 />
@@ -2209,7 +2275,7 @@ export default function Reader({
                                         }}
                                         aria-label="Typography settings"
                                         aria-expanded={typographyOpen}
-                                        className={`grid size-11 place-items-center rounded-full ${readerControl}`}
+                                        className={`grid size-11 place-items-center rounded-full ${readerPanelControl} ${readerPanelControlState(typographyOpen)}`}
                                     >
                                         <span className="font-serif text-lg font-medium">
                                             Aa
@@ -2310,7 +2376,7 @@ export default function Reader({
                                             setEditionPreferencesOpen(false);
                                             setHighlightOpen(false);
                                         }}
-                                        className={`hidden size-11 place-items-center rounded-full sm:grid ${readerControl}`}
+                                        className={`hidden size-11 place-items-center rounded-full sm:grid ${readerPanelControl} ${readerPanelControlState(outlineOpen)}`}
                                     >
                                         <List className="size-5" />
                                     </button>
@@ -2367,7 +2433,7 @@ export default function Reader({
                                                                 type="button"
                                                                 onClick={() =>
                                                                     navigateToSection(
-                                                                        section.key,
+                                                                        section,
                                                                     )
                                                                 }
                                                                 className={`grid w-full cursor-pointer grid-cols-[4.5rem_minmax(0,1fr)] items-start gap-3 rounded-xl px-3 py-3 text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--reader-accent)] ${outlineItemHover}`}
@@ -2957,7 +3023,7 @@ export default function Reader({
                                     </div>
                                 </div>
                                 <Link
-                                    href={`/read/${edition.slug}/${book.code}/${chapter}`}
+                                    href={`/read/${book.code}/${chapter}`}
                                     className={`inline-flex shrink-0 items-center justify-center gap-2 self-start rounded-full border px-4 py-2 font-sans text-sm font-semibold sm:self-auto ${readerBorderedControl}`}
                                 >
                                     <BookOpen className="size-4" />

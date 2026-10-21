@@ -14,14 +14,14 @@ class ExampleTest extends TestCase
 
     public function test_home_redirects_to_the_default_edition_book_and_chapter(): void
     {
-        $this->get(route('home'))->assertRedirect('/read/oeb/JHN/1');
+        $this->get(route('home'))->assertRedirect('/read/JHN/1');
     }
 
     public function test_reader_receives_catalog_metadata(): void
     {
         [$edition, $book] = $this->john();
 
-        $this->get(route('reader.show', [$edition, $book, '1']))
+        $this->get(route('reader.show', ['book' => 'JHN', 'chapter' => '1']))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('reader')

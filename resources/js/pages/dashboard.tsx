@@ -1,4 +1,4 @@
-import { Head, Link, usePage } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import {
     Bell,
     Bookmark,
@@ -26,7 +26,7 @@ import { edit as editProfile } from '@/routes/profile';
 
 const navigation = [
     { label: 'Home', icon: Home, href: '/dashboard' },
-    { label: 'Library', icon: BookOpen, href: '/books/oeb/JHN' },
+    { label: 'Library', icon: BookOpen, href: '/books/JHN' },
     { label: 'Search', icon: Search, href: '/search' },
     { label: 'Plans', icon: CalendarDays, href: '#plans' },
     { label: 'Notes', icon: FileText, href: '/notes' },
@@ -36,12 +36,12 @@ const navigation = [
 ];
 
 const savedTabs = [
-    { label: 'Bookmarks', icon: Bookmark },
-    { label: 'Highlights', icon: Highlighter },
-    { label: 'Notes', icon: FileText },
+    { label: 'Notes', slug: 'notes', icon: FileText },
+    { label: 'Highlights', slug: 'highlights', icon: Highlighter },
+    { label: 'Bookmarks', slug: 'bookmarks', icon: Bookmark },
 ] as const;
 
-type SavedTab = (typeof savedTabs)[number]['label'];
+type SavedTab = (typeof savedTabs)[number]['slug'];
 
 interface DashboardBookmark {
     id: string;
@@ -53,12 +53,21 @@ interface DashboardBookmark {
 }
 
 interface DashboardProps {
-    bookmarks: DashboardBookmark[];
-    highlights: DashboardHighlight[];
-    notes: DashboardNote[];
     bookmarkCount: number;
     highlightCount: number;
     noteCount: number;
+    savedTab: SavedTab;
+    savedItems: PaginatedSavedItems;
+}
+
+interface PaginatedSavedItems {
+    data: Array<DashboardBookmark | DashboardHighlight | DashboardNote>;
+    currentPage: number;
+    lastPage: number;
+    perPage: number;
+    total: number;
+    from: number | null;
+    to: number | null;
 }
 
 interface DashboardHighlight {
@@ -172,35 +181,65 @@ function DashboardSidebar({ close }: { close?: () => void }) {
 }
 
 export default function Dashboard({
-    bookmarks,
-    highlights,
-    notes,
     bookmarkCount,
     highlightCount,
     noteCount,
+    savedTab,
+    savedItems,
 }: DashboardProps) {
     const { auth } = usePage().props;
     const { appearance, resolvedAppearance } = useAppearance();
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
-    const [savedTab, setSavedTab] = useState<SavedTab>('Bookmarks');
+    const [savedItemsLoading, setSavedItemsLoading] = useState(false);
     const user = auth.user;
     const themeLabel =
         appearance === 'system'
             ? `System (${resolvedAppearance})`
             : appearance.charAt(0).toUpperCase() + appearance.slice(1);
 
-    const activity = [
-        { label: 'Passages read', value: 0, icon: BookOpen },
-        { label: 'Highlights', value: highlightCount, icon: Highlighter },
-        { label: 'Bookmarks', value: bookmarkCount, icon: Bookmark },
-        { label: 'Notes', value: noteCount, icon: FileText },
-    ];
     const savedItemsUrl =
-        savedTab === 'Bookmarks'
+        savedTab === 'bookmarks'
             ? '/bookmarks'
-            : savedTab === 'Highlights'
+            : savedTab === 'highlights'
               ? '/highlights'
               : '/notes';
+    const savedItemCounts: Record<SavedTab, number> = {
+        notes: noteCount,
+        highlights: highlightCount,
+        bookmarks: bookmarkCount,
+    };
+    const notes =
+        savedTab === 'notes' ? (savedItems.data as DashboardNote[]) : [];
+    const highlights =
+        savedTab === 'highlights'
+            ? (savedItems.data as DashboardHighlight[])
+            : [];
+    const bookmarks =
+        savedTab === 'bookmarks'
+            ? (savedItems.data as DashboardBookmark[])
+            : [];
+
+    const loadSavedItems = (tab: SavedTab, page = 1) => {
+        if (
+            savedItemsLoading ||
+            (tab === savedTab && page === savedItems.currentPage)
+        ) {
+            return;
+        }
+
+        router.get(
+            '/dashboard',
+            { saved: tab, page },
+            {
+                only: ['savedTab', 'savedItems'],
+                preserveScroll: true,
+                preserveState: true,
+                replace: true,
+                onStart: () => setSavedItemsLoading(true),
+                onFinish: () => setSavedItemsLoading(false),
+            },
+        );
+    };
 
     return (
         <>
@@ -373,26 +412,27 @@ export default function Dashboard({
                                         className="mt-4 flex gap-2 overflow-x-auto pb-1"
                                     >
                                         {savedTabs.map(
-                                            ({ label, icon: Icon }) => (
+                                            ({ label, slug, icon: Icon }) => (
                                                 <button
-                                                    key={label}
+                                                    key={slug}
                                                     type="button"
                                                     role="tab"
                                                     aria-selected={
-                                                        savedTab === label
+                                                        savedTab === slug
                                                     }
                                                     aria-controls="saved-items-panel"
                                                     onClick={() =>
-                                                        setSavedTab(label)
+                                                        loadSavedItems(slug)
                                                     }
                                                     className={`flex shrink-0 cursor-pointer items-center gap-2 rounded-xl px-5 py-2.5 font-serif text-sm transition focus-visible:ring-2 focus-visible:ring-[#9a672d] focus-visible:outline-none ${
-                                                        savedTab === label
+                                                        savedTab === slug
                                                             ? 'bg-[#1d1e1a] text-[#fffaf1]'
                                                             : 'bg-[#eee6da] hover:bg-[#e6dccd]'
                                                     }`}
                                                 >
                                                     <Icon className="size-4 stroke-[1.6]" />
-                                                    {label}
+                                                    {label} (
+                                                    {savedItemCounts[slug]})
                                                 </button>
                                             ),
                                         )}
@@ -400,11 +440,12 @@ export default function Dashboard({
                                     <div
                                         id="saved-items-panel"
                                         role="tabpanel"
-                                        className="mt-5"
+                                        aria-busy={savedItemsLoading}
+                                        className={`mt-5 transition-opacity ${savedItemsLoading ? 'pointer-events-none opacity-45' : 'opacity-100'}`}
                                     >
-                                        {savedTab === 'Bookmarks' &&
+                                        {savedTab === 'bookmarks' &&
                                             (bookmarks.length ? (
-                                                <div className="divide-y divide-[#e1d9ce] border-y border-[#e1d9ce]">
+                                                <div className="divide-y divide-[#e1d9ce] border-t border-[#e1d9ce]">
                                                     {bookmarks.map(
                                                         (bookmark) => (
                                                             <Link
@@ -458,16 +499,16 @@ export default function Dashboard({
                                                         appear here.
                                                     </p>
                                                     <Link
-                                                        href="/read/oeb/JHN/1"
+                                                        href="/read/JHN/1"
                                                         className="mt-4 rounded-full bg-[#ede4d6] px-5 py-2 font-serif text-sm hover:bg-[#e2d5c3]"
                                                     >
                                                         Start reading
                                                     </Link>
                                                 </div>
                                             ))}
-                                        {savedTab === 'Highlights' &&
+                                        {savedTab === 'highlights' &&
                                             (highlights.length ? (
-                                                <div className="divide-y divide-[#e1d9ce] border-y border-[#e1d9ce]">
+                                                <div className="divide-y divide-[#e1d9ce] border-t border-[#e1d9ce]">
                                                     {highlights.map(
                                                         (highlight) => (
                                                             <Link
@@ -480,16 +521,16 @@ export default function Dashboard({
                                                                 className="group flex items-center gap-4 px-1 py-4 transition hover:bg-[#faf6ef] focus-visible:ring-2 focus-visible:ring-[#9a672d] focus-visible:outline-none sm:px-2"
                                                             >
                                                                 <span
-                                                                    className="grid size-11 shrink-0 place-items-center rounded-xl bg-[#eee5d8]"
+                                                                    aria-hidden="true"
+                                                                    className="size-11 shrink-0 rounded-xl"
                                                                     style={{
-                                                                        color: highlightColours[
-                                                                            highlight
-                                                                                .color
-                                                                        ],
+                                                                        backgroundColor:
+                                                                            highlightColours[
+                                                                                highlight
+                                                                                    .color
+                                                                            ],
                                                                     }}
-                                                                >
-                                                                    <Highlighter className="size-5 fill-current stroke-[1.2]" />
-                                                                </span>
+                                                                />
                                                                 <div className="min-w-0 flex-1 font-serif">
                                                                     <p className="truncate text-lg text-[#20211d]">
                                                                         “
@@ -534,9 +575,9 @@ export default function Dashboard({
                                                     </p>
                                                 </div>
                                             ))}
-                                        {savedTab === 'Notes' &&
+                                        {savedTab === 'notes' &&
                                             (notes.length ? (
-                                                <div className="divide-y divide-[#e1d9ce] border-y border-[#e1d9ce]">
+                                                <div className="divide-y divide-[#e1d9ce] border-t border-[#e1d9ce]">
                                                     {notes.map((note) => (
                                                         <article
                                                             key={note.id}
@@ -604,46 +645,66 @@ export default function Dashboard({
                                                         text.
                                                     </p>
                                                     <Link
-                                                        href="/read/oeb/JHN/1"
+                                                        href="/read/JHN/1"
                                                         className="mt-4 rounded-full bg-[#ede4d6] px-5 py-2 font-serif text-sm hover:bg-[#e2d5c3]"
                                                     >
                                                         Start reading
                                                     </Link>
                                                 </div>
                                             ))}
+                                        {savedItems.lastPage > 1 && (
+                                            <nav
+                                                aria-label={`${savedTab} pagination`}
+                                                className="mt-5 flex items-center justify-between gap-3 border-t border-[#e1d9ce] pt-4"
+                                            >
+                                                <button
+                                                    type="button"
+                                                    disabled={
+                                                        savedItems.currentPage ===
+                                                            1 ||
+                                                        savedItemsLoading
+                                                    }
+                                                    onClick={() =>
+                                                        loadSavedItems(
+                                                            savedTab,
+                                                            savedItems.currentPage -
+                                                                1,
+                                                        )
+                                                    }
+                                                    className="cursor-pointer rounded-full bg-[#eee6da] px-4 py-2 font-serif text-sm transition hover:bg-[#e2d6c4] disabled:cursor-not-allowed disabled:opacity-45"
+                                                >
+                                                    Previous
+                                                </button>
+                                                <span className="font-serif text-sm text-[#71695e]">
+                                                    Page{' '}
+                                                    {savedItems.currentPage} of{' '}
+                                                    {savedItems.lastPage}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    disabled={
+                                                        savedItems.currentPage ===
+                                                            savedItems.lastPage ||
+                                                        savedItemsLoading
+                                                    }
+                                                    onClick={() =>
+                                                        loadSavedItems(
+                                                            savedTab,
+                                                            savedItems.currentPage +
+                                                                1,
+                                                        )
+                                                    }
+                                                    className="cursor-pointer rounded-full bg-[#eee6da] px-4 py-2 font-serif text-sm transition hover:bg-[#e2d6c4] disabled:cursor-not-allowed disabled:opacity-45"
+                                                >
+                                                    Next
+                                                </button>
+                                            </nav>
+                                        )}
                                     </div>
                                 </Panel>
                             </div>
 
                             <div className="grid content-start gap-4">
-                                <Panel className="p-6">
-                                    <SectionHeading>
-                                        Reading activity
-                                    </SectionHeading>
-                                    <div className="mt-6 grid grid-cols-2 gap-5 sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
-                                        {activity.map(
-                                            ({ label, value, icon: Icon }) => (
-                                                <div
-                                                    key={label}
-                                                    className="flex items-center gap-3"
-                                                >
-                                                    <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[#eee5d8] text-[#6f5731]">
-                                                        <Icon className="size-5 stroke-[1.5]" />
-                                                    </span>
-                                                    <div>
-                                                        <strong className="font-serif text-xl font-normal">
-                                                            {value}
-                                                        </strong>
-                                                        <p className="font-serif text-xs whitespace-nowrap text-[#7d766c]">
-                                                            {label}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            ),
-                                        )}
-                                    </div>
-                                </Panel>
-
                                 <Panel className="p-6">
                                     <SectionHeading
                                         action={
@@ -655,7 +716,7 @@ export default function Dashboard({
                                         Recently viewed
                                     </SectionHeading>
                                     <Link
-                                        href="/read/oeb/JHN/1"
+                                        href="/read/JHN/1"
                                         className="mt-5 flex items-center gap-4 rounded-xl border border-[#e5ded4] p-3 transition hover:bg-[#f5eee4] focus-visible:ring-2 focus-visible:ring-[#9a672d] focus-visible:outline-none"
                                     >
                                         <img
@@ -679,7 +740,7 @@ export default function Dashboard({
                                     <SectionHeading>Preferences</SectionHeading>
                                     <div className="mt-4 grid sm:grid-cols-2">
                                         <Link
-                                            href="/read/oeb/JHN/1"
+                                            href="/read/JHN/1"
                                             className="flex items-center gap-3 border-b border-[#e1d9ce] py-4 pr-3 sm:border-r"
                                         >
                                             <BookOpen className="size-6 stroke-[1.4]" />

@@ -52,7 +52,7 @@ class BookmarkController extends Controller
         return back();
     }
 
-    /** @return array{bible_book_id: string, chapter: string, verse_start: ?string, verse_end: ?string, title: ?string} */
+    /** @return array{bible_book_id: string, book_code: string, chapter: string, verse_start: ?string, verse_end: ?string, title: ?string} */
     private function validated(Request $request): array
     {
         $data = $request->validate([
@@ -66,15 +66,22 @@ class BookmarkController extends Controller
         $data['verse_start'] = $data['verse_start'] ?: null;
         $data['verse_end'] = $data['verse_start'] ? ($data['verse_end'] ?: $data['verse_start']) : null;
         $data['title'] = filled($data['title'] ?? null) ? trim($data['title']) : null;
+        $bookCode = BibleBook::query()->whereKey($data['bible_book_id'])->value('book_code');
+        abort_unless(is_string($bookCode), 404);
+        $data['book_code'] = $bookCode;
 
         return $data;
     }
 
-    /** @param array{bible_book_id: string, chapter: string, verse_start: ?string, verse_end: ?string, title: ?string} $data */
+    /** @param array{bible_book_id: string, book_code: string, chapter: string, verse_start: ?string, verse_end: ?string, title: ?string} $data */
     private function ensureUnique(Request $request, array $data, ?Bookmark $except = null): void
     {
         $query = $request->user()->bookmarks()
-            ->where('bible_book_id', $data['bible_book_id'])
+            ->where(fn ($query) => $query
+                ->where('book_code', $data['book_code'])
+                ->orWhere(fn ($legacy) => $legacy
+                    ->whereNull('book_code')
+                    ->where('bible_book_id', $data['bible_book_id'])))
             ->where('chapter', $data['chapter'])
             ->where('verse_start', $data['verse_start'])
             ->where('verse_end', $data['verse_end']);
@@ -115,7 +122,6 @@ class BookmarkController extends Controller
                 'abbreviation' => $book->edition->abbreviation,
             ],
             'readerUrl' => route('reader.show', [
-                'edition' => $book->edition->slug,
                 'book' => $book->book_code,
                 'chapter' => $bookmark->chapter,
                 'bookmark' => $bookmark->id,

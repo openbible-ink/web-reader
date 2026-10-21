@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $edition_id
  * @property string|null $versification
  * @property string|null $chapter
+ * @property string|null $section_key
  * @property string|null $verse_start
  * @property string|null $verse_end
  * @property string $role
@@ -23,6 +24,7 @@ class ScriptureArtworkPassage extends Model
         'versification',
         'book_code',
         'chapter',
+        'section_key',
         'verse_start',
         'verse_end',
         'role',

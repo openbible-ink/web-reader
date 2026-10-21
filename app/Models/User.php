@@ -6,6 +6,7 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -28,7 +29,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['username', 'name', 'email', 'password'])]
+#[Fillable(['username', 'name', 'email', 'password', 'preferred_edition_id'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements PasskeyUser
 {
@@ -51,6 +52,18 @@ class User extends Authenticatable implements PasskeyUser
     public function notes(): HasMany
     {
         return $this->hasMany(Note::class);
+    }
+
+    /** @return HasMany<RecentPassage, $this> */
+    public function recentPassages(): HasMany
+    {
+        return $this->hasMany(RecentPassage::class);
+    }
+
+    /** @return BelongsTo<BibleEdition, $this> */
+    public function preferredEdition(): BelongsTo
+    {
+        return $this->belongsTo(BibleEdition::class, 'preferred_edition_id');
     }
 
     /**

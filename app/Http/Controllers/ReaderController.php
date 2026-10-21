@@ -8,32 +8,47 @@ use App\Models\Bookmark;
 use App\Models\Highlight;
 use App\Models\Note;
 use App\Models\ScriptureArtworkPassage;
+use App\Services\BibleEditionResolver;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class ReaderController extends Controller
 {
-    public function __invoke(Request $request, BibleEdition $edition, BibleBook $book, string $chapter): Response
+    public function __invoke(Request $request, string $book, string $chapter, BibleEditionResolver $resolver): Response
     {
+        $book = $resolver->resolveBook($request, $book);
+        $edition = $book->edition;
+
         abort_unless(ctype_digit($chapter) && (int) $chapter >= 1 && (int) $chapter <= $book->chapter_count, 404);
 
         $focusedBookmark = null;
         if ($request->filled('bookmark')) {
-            abort_unless($request->user(), 404);
+            abort_unless($request->user() !== null, 404);
             $focusedBookmark = $request->user()->bookmarks()
                 ->whereKey($request->string('bookmark')->toString())
-                ->where('bible_book_id', $book->id)
+                ->where(fn ($query) => $query
+                    ->where('book_code', $book->book_code)
+                    ->orWhere(fn ($legacy) => $legacy
+                        ->whereNull('book_code')
+                        ->where('bible_book_id', $book->id)))
                 ->where('chapter', $chapter)
                 ->firstOrFail();
         }
 
         $focusedNoteId = null;
         if ($request->filled('note')) {
-            abort_unless($request->user(), 404);
+            abort_unless($request->user() !== null, 404);
             $focusedNoteId = $request->user()->notes()
                 ->whereKey($request->string('note')->toString())
-                ->where('bible_book_id', $book->id)
+                ->where(fn ($query) => $query
+                    ->where('book_code', $book->book_code)
+                    ->orWhere(fn ($legacy) => $legacy
+                        ->whereNull('book_code')
+                        ->where('bible_book_id', $book->id)))
+                ->where(fn ($query) => $query
+                    ->where('anchor_type', '!=', 'selection')
+                    ->orWhere('bible_book_id', $book->id))
                 ->where('chapter', $chapter)
                 ->value('id');
             abort_unless($focusedNoteId, 404);
@@ -63,6 +78,20 @@ class ReaderController extends Controller
                 'bookCode' => $availableEdition->books->firstOrFail()->book_code,
             ]);
 
+        $libraryBooks = $edition->books()
+            ->orderBy('canon_position')
+            ->get()
+            ->map(fn (BibleBook $libraryBook) => [
+                'code' => $libraryBook->book_code,
+                'name' => $libraryBook->name,
+                'testament' => $libraryBook->canon_position !== null && $libraryBook->canon_position <= 39 ? 'old' : 'new',
+                'readerUrl' => route('reader.show', [
+                    'book' => $libraryBook->book_code,
+                    'chapter' => '1',
+                ], false),
+            ])
+            ->values();
+
         return Inertia::render('reader', [
             'edition' => [
                 'slug' => $edition->slug,
@@ -83,6 +112,9 @@ class ReaderController extends Controller
                 'chapterCount' => $book->chapter_count,
             ],
             'chapter' => $chapter,
+            'focusedSectionKey' => $request->filled('section')
+                ? $request->string('section')->limit(255)->toString()
+                : null,
             'focusedBookmark' => $focusedBookmark ? [
                 'id' => $focusedBookmark->id,
                 'title' => $focusedBookmark->title,
@@ -91,7 +123,11 @@ class ReaderController extends Controller
             ] : null,
             'bookmarks' => $request->user()
                 ? $request->user()->bookmarks()
-                    ->where('bible_book_id', $book->id)
+                    ->where(fn ($query) => $query
+                        ->where('book_code', $book->book_code)
+                        ->orWhere(fn ($legacy) => $legacy
+                            ->whereNull('book_code')
+                            ->where('bible_book_id', $book->id)))
                     ->where('chapter', $chapter)
                     ->oldest()
                     ->get()
@@ -106,7 +142,14 @@ class ReaderController extends Controller
             'highlights' => $request->user()
                 ? $request->user()->highlights()
                     ->with('segments')
-                    ->where('bible_book_id', $book->id)
+                    ->where(fn ($query) => $query
+                        ->where('book_code', $book->book_code)
+                        ->orWhere(fn ($legacy) => $legacy
+                            ->whereNull('book_code')
+                            ->where('bible_book_id', $book->id)))
+                    ->where(fn ($query) => $query
+                        ->where('anchor_type', '!=', 'selection')
+                        ->orWhere('bible_book_id', $book->id))
                     ->where('chapter', $chapter)
                     ->oldest()
                     ->get()
@@ -130,7 +173,14 @@ class ReaderController extends Controller
             'notes' => $request->user()
                 ? $request->user()->notes()
                     ->with('segments')
-                    ->where('bible_book_id', $book->id)
+                    ->where(fn ($query) => $query
+                        ->where('book_code', $book->book_code)
+                        ->orWhere(fn ($legacy) => $legacy
+                            ->whereNull('book_code')
+                            ->where('bible_book_id', $book->id)))
+                    ->where(fn ($query) => $query
+                        ->where('anchor_type', '!=', 'selection')
+                        ->orWhere('bible_book_id', $book->id))
                     ->where('chapter', $chapter)
                     ->oldest()
                     ->get()
@@ -156,6 +206,7 @@ class ReaderController extends Controller
                     ->values()
                 : [],
             'availableEditions' => $availableEditions,
+            'libraryBooks' => $libraryBooks,
             'artworks' => $placements->map(fn (ScriptureArtworkPassage $placement) => [
                 'id' => $placement->artwork->id,
                 'imageUrl' => asset($placement->artwork->image_path),
@@ -172,6 +223,7 @@ class ReaderController extends Controller
                 'reference' => [
                     'book' => $placement->book_code,
                     'chapter' => $placement->chapter,
+                    'sectionKey' => $placement->section_key,
                     'verseStart' => $placement->verse_start,
                     'verseEnd' => $placement->verse_end,
                 ],

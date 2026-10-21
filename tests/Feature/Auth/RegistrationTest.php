@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Fortify\Features;
 use Tests\TestCase;
@@ -44,7 +45,7 @@ class RegistrationTest extends TestCase
 
     public function test_usernames_are_normalized_and_must_be_unique(): void
     {
-        \App\Models\User::factory()->create(['username' => 'reader_one']);
+        User::factory()->create(['username' => 'reader_one']);
 
         $response = $this->post(route('register.store'), [
             'username' => 'Reader_One',

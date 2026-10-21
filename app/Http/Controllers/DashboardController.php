@@ -7,6 +7,7 @@ use App\Models\Bookmark;
 use App\Models\Highlight;
 use App\Models\Note;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -14,39 +15,58 @@ class DashboardController extends Controller
 {
     public function __invoke(Request $request): Response
     {
+        $savedTab = in_array($request->string('saved')->toString(), ['notes', 'highlights', 'bookmarks'], true)
+            ? $request->string('saved')->toString()
+            : 'notes';
         $bookmarkQuery = $request->user()->bookmarks();
         $bookmarkCount = (clone $bookmarkQuery)->count();
-        $bookmarks = $bookmarkQuery
-            ->with('book.edition')
-            ->latest()
-            ->limit(4)
-            ->get()
-            ->map(fn (Bookmark $bookmark) => $this->serialize($bookmark));
         $highlightQuery = $request->user()->highlights();
         $highlightCount = (clone $highlightQuery)->count();
-        $highlights = $highlightQuery
-            ->with(['book.edition', 'segments'])
-            ->latest()
-            ->limit(4)
-            ->get()
-            ->map(fn (Highlight $highlight) => $this->serializeHighlight($highlight));
         $noteQuery = $request->user()->notes();
         $noteCount = (clone $noteQuery)->count();
-        $notes = $noteQuery
-            ->with(['book.edition', 'segments'])
-            ->latest('updated_at')
-            ->limit(4)
-            ->get()
-            ->map(fn (Note $note) => $this->serializeNote($note));
+
+        $savedItems = match ($savedTab) {
+            'bookmarks' => $bookmarkQuery
+                ->with('book.edition')
+                ->latest()
+                ->paginate(4)
+                ->through(fn (Bookmark $bookmark) => $this->serialize($bookmark)),
+            'highlights' => $highlightQuery
+                ->with(['book.edition', 'segments'])
+                ->latest()
+                ->paginate(4)
+                ->through(fn (Highlight $highlight) => $this->serializeHighlight($highlight)),
+            default => $noteQuery
+                ->with(['book.edition', 'segments'])
+                ->latest('updated_at')
+                ->paginate(4)
+                ->through(fn (Note $note) => $this->serializeNote($note)),
+        };
 
         return Inertia::render('dashboard', [
             'bookmarkCount' => $bookmarkCount,
-            'bookmarks' => $bookmarks,
             'highlightCount' => $highlightCount,
-            'highlights' => $highlights,
             'noteCount' => $noteCount,
-            'notes' => $notes,
+            'savedTab' => $savedTab,
+            'savedItems' => $this->paginationPayload($savedItems),
         ]);
+    }
+
+    /**
+     * @param  LengthAwarePaginator<int, array<string, mixed>>  $items
+     * @return array<string, mixed>
+     */
+    private function paginationPayload(LengthAwarePaginator $items): array
+    {
+        return [
+            'data' => $items->items(),
+            'currentPage' => $items->currentPage(),
+            'lastPage' => $items->lastPage(),
+            'perPage' => $items->perPage(),
+            'total' => $items->total(),
+            'from' => $items->firstItem(),
+            'to' => $items->lastItem(),
+        ];
     }
 
     /** @return array<string, mixed> */
@@ -61,7 +81,6 @@ class DashboardController extends Controller
             'reference' => $this->reference($book->name, $bookmark),
             'edition' => $book->edition->abbreviation,
             'readerUrl' => route('reader.show', [
-                'edition' => $book->edition->slug,
                 'book' => $book->book_code,
                 'chapter' => $bookmark->chapter,
                 'bookmark' => $bookmark->id,
@@ -106,7 +125,6 @@ class DashboardController extends Controller
             'reference' => $reference,
             'edition' => $book->edition->abbreviation,
             'readerUrl' => route('reader.show', [
-                'edition' => $book->edition->slug,
                 'book' => $book->book_code,
                 'chapter' => $highlight->chapter,
             ], absolute: false),
@@ -121,10 +139,11 @@ class DashboardController extends Controller
         $book = $note->book;
         $reference = "{$book->name} {$note->chapter}";
         if ($note->verse_start) {
-            $verses = $note->verse_start === $note->verse_end || ! $note->verse_end
-                ? $note->verse_start
-                : "{$note->verse_start}–{$note->verse_end}";
-            $reference .= ":{$verses}";
+            $reference .= $note->chapter_end && $note->chapter_end !== $note->chapter
+                ? ":{$note->verse_start}–{$note->chapter_end}:{$note->verse_end}"
+                : ':'.($note->verse_start === $note->verse_end || ! $note->verse_end
+                    ? $note->verse_start
+                    : "{$note->verse_start}–{$note->verse_end}");
         }
 
         return [
@@ -134,14 +153,12 @@ class DashboardController extends Controller
             'reference' => $reference,
             'edition' => $book->edition->abbreviation,
             'readerUrl' => route('reader.show', [
-                'edition' => $book->edition->slug,
                 'book' => $book->book_code,
                 'chapter' => $note->chapter,
                 'note' => $note->id,
             ], absolute: false),
             'noteUrl' => route('notes.show', $note, absolute: false),
             'editUrl' => route('reader.show', [
-                'edition' => $book->edition->slug,
                 'book' => $book->book_code,
                 'chapter' => $note->chapter,
                 'note' => $note->id,

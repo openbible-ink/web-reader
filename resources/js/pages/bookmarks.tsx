@@ -47,7 +47,7 @@ export default function Bookmarks({
                             </span>
                         </Link>
                         <Link
-                            href="/read/oeb/JHN/1"
+                            href="/read/JHN/1"
                             className="flex items-center gap-2 rounded-full border border-[#d9d0c4] bg-white/55 px-4 py-2 font-serif text-sm hover:bg-white"
                         >
                             <BookOpen className="size-4" />
@@ -124,7 +124,7 @@ export default function Bookmarks({
                                 chapter, section, or verse range.
                             </p>
                             <Link
-                                href="/read/oeb/JHN/1"
+                                href="/read/JHN/1"
                                 className="mt-6 rounded-full bg-[#1e1f1b] px-6 py-3 font-serif text-sm text-[#fffaf1] hover:bg-black"
                             >
                                 Start reading

@@ -13,6 +13,7 @@ class Bookmark extends Model
     protected $fillable = [
         'user_id',
         'bible_book_id',
+        'book_code',
         'chapter',
         'verse_start',
         'verse_end',

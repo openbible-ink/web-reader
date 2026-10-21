@@ -14,7 +14,12 @@ class Highlight extends Model
     protected $fillable = [
         'user_id',
         'bible_book_id',
+        'book_code',
         'chapter',
+        'chapter_end',
+        'anchor_type',
+        'verse_start',
+        'verse_end',
         'color',
         'selected_text',
     ];

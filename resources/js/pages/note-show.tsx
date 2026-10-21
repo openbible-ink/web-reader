@@ -21,6 +21,7 @@ interface NotePageProps {
         verseStart?: string | null;
         verseEnd?: string | null;
         chapter: string;
+        chapterEnd?: string | null;
         reference: string;
         attachmentLabel: string;
         updatedAt?: string | null;
@@ -38,6 +39,7 @@ interface NotePageProps {
 }
 
 interface PassageVerse {
+    chapter: string;
     number: string;
     text: string;
 }
@@ -85,47 +87,78 @@ function chapterContent(document: BibleDocument, chapter: string): FlowNode[] {
 function passageVerses(
     document: BibleDocument,
     chapter: string,
+    chapterEnd: string | null | undefined,
     verseStart?: string | null,
     verseEnd?: string | null,
 ): PassageVerse[] {
-    const verses: PassageVerse[] = [];
-    let current: PassageVerse | undefined;
-    const flush = () => {
-        if (current) {
-            current.text = current.text.replace(/\s+/g, ' ').trim();
-            verses.push(current);
-        }
-        current = undefined;
-    };
-    const consume = (node: InlineNode) => {
-        if (node.type === 'verseStart') {
+    const allChapters = document.children
+        .filter((node) => node.type === 'chapterStart')
+        .map((node) => node.number);
+    const startChapterIndex = allChapters.indexOf(chapter);
+    const finalChapter = chapterEnd ?? chapter;
+    const endChapterIndex = allChapters.indexOf(finalChapter);
+    if (startChapterIndex === -1 || endChapterIndex < startChapterIndex)
+        return [];
+
+    return allChapters
+        .slice(startChapterIndex, endChapterIndex + 1)
+        .flatMap((currentChapter) => {
+            const verses: PassageVerse[] = [];
+            let current: PassageVerse | undefined;
+            const flush = () => {
+                if (current) {
+                    current.text = current.text.replace(/\s+/g, ' ').trim();
+                    verses.push(current);
+                }
+                current = undefined;
+            };
+            const consume = (node: InlineNode) => {
+                if (node.type === 'verseStart') {
+                    flush();
+                    current = {
+                        chapter: currentChapter,
+                        number: node.number,
+                        text: '',
+                    };
+                    return;
+                }
+                if (current) current.text += inlineText(node);
+            };
+
+            chapterContent(document, currentChapter).forEach((node) => {
+                if (node.type === 'block') node.children.forEach(consume);
+                else if (node.type !== 'chapterStart') consume(node);
+            });
             flush();
-            current = { number: node.number, text: '' };
-            return;
-        }
-        if (current) current.text += inlineText(node);
-    };
 
-    chapterContent(document, chapter).forEach((node) => {
-        if (node.type === 'block') node.children.forEach(consume);
-        else if (node.type !== 'chapterStart') consume(node);
-    });
-    flush();
-
-    if (!verseStart) return verses;
-    const start = verses.findIndex((verse) => verse.number === verseStart);
-    if (start === -1) return [];
-    const requestedEnd = verses.findIndex(
-        (verse) => verse.number === (verseEnd ?? verseStart),
-    );
-    return verses.slice(start, Math.max(start, requestedEnd) + 1);
+            const start =
+                currentChapter === chapter && verseStart
+                    ? verses.findIndex((verse) => verse.number === verseStart)
+                    : 0;
+            const requestedEnd =
+                currentChapter === finalChapter && verseEnd
+                    ? verses.findIndex((verse) => verse.number === verseEnd)
+                    : verses.length - 1;
+            return verses.slice(
+                Math.max(0, start),
+                Math.max(start, requestedEnd) + 1,
+            );
+        });
 }
 
-function passageContent(verses: PassageVerse[]): ReactNode {
+function passageContent(
+    verses: PassageVerse[],
+    showChapters: boolean,
+): ReactNode {
     return verses.map((verse) => (
-        <p key={verse.number} className="grid grid-cols-[2rem_1fr] gap-3">
+        <p
+            key={`${verse.chapter}:${verse.number}`}
+            className="grid grid-cols-[2.75rem_1fr] gap-3"
+        >
             <span className="pt-1 font-sans text-xs font-semibold text-[#9a5428]">
-                {verse.number}
+                {showChapters
+                    ? `${verse.chapter}:${verse.number}`
+                    : verse.number}
             </span>
             <span>{verse.text}</span>
         </p>
@@ -180,6 +213,7 @@ export default function NoteShow({
         return passageVerses(
             document,
             note.chapter,
+            note.chapterEnd,
             note.verseStart,
             note.verseEnd,
         );
@@ -294,7 +328,14 @@ export default function NoteShow({
                                                 </blockquote>
                                             ) : verses.length ? (
                                                 <div className="grid gap-3">
-                                                    {passageContent(verses)}
+                                                    {passageContent(
+                                                        verses,
+                                                        Boolean(
+                                                            note.chapterEnd &&
+                                                            note.chapterEnd !==
+                                                                note.chapter,
+                                                        ),
+                                                    )}
                                                 </div>
                                             ) : sourceError ? (
                                                 <p className="text-[#81776c] italic">

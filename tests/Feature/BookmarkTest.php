@@ -42,10 +42,10 @@ class BookmarkTest extends TestCase
                 ->component('bookmarks')
                 ->has('bookmarks', 1)
                 ->where('bookmarks.0.reference', 'John 1:19–28')
-                ->where('bookmarks.0.readerUrl', "/read/oeb/JHN/1?bookmark={$bookmark->id}"));
+                ->where('bookmarks.0.readerUrl', "/read/JHN/1?bookmark={$bookmark->id}"));
 
         $this->actingAs($user)
-            ->get("/read/oeb/JHN/1?bookmark={$bookmark->id}")
+            ->get("/read/JHN/1?bookmark={$bookmark->id}")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('reader')
@@ -120,7 +120,7 @@ class BookmarkTest extends TestCase
         ]);
 
         $this->actingAs(User::factory()->create())
-            ->get("/read/oeb/JHN/1?bookmark={$bookmark->id}")
+            ->get("/read/JHN/1?bookmark={$bookmark->id}")
             ->assertNotFound();
     }
 

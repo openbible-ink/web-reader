@@ -6,24 +6,26 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HighlightController;
 use App\Http\Controllers\NoteController;
 use App\Http\Controllers\ReaderController;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => redirect()->route('reader.show', [
-    'edition' => 'oeb',
     'book' => 'JHN',
     'chapter' => '1',
 ]))->name('home');
 
-Route::get('/read/{edition:slug}/{book:book_code}/{chapter}', ReaderController::class)
-    ->scopeBindings()
-    ->name('reader.show');
-Route::get('/books/{edition:slug}/{book:book_code}', BookOverviewController::class)
-    ->scopeBindings()
-    ->name('books.show');
 Route::get('/books/john', fn () => redirect()->route('books.show', [
-    'edition' => 'oeb',
     'book' => 'JHN',
 ]))->name('books.john');
+Route::get('/read/{book}/{chapter}', ReaderController::class)->name('reader.show');
+Route::get('/books/{book}', BookOverviewController::class)->name('books.show');
+Route::get('/read/{edition}/{book}/{chapter}', fn (Request $request, string $edition, string $book, string $chapter) => redirect()->route(
+    'reader.show',
+    ['book' => $book, 'chapter' => $chapter, ...$request->query()],
+))->name('reader.legacy');
+Route::get('/books/{edition}/{book}', fn (string $edition, string $book) => redirect()->route('books.show', [
+    'book' => $book,
+]))->name('books.legacy');
 Route::inertia('/search', 'search')->name('search');
 
 Route::middleware(['auth', 'verified'])->group(function () {

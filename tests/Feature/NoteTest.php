@@ -55,8 +55,8 @@ class NoteTest extends TestCase
                 ->where('note.bodyMarkdown', $payload['body_markdown'])
                 ->where('edition.abbreviation', 'OEB')
                 ->where('book.code', 'JHN')
-                ->where('readerUrl', '/read/oeb/JHN/1')
-                ->where('editUrl', "/read/oeb/JHN/1?note={$note->id}&fullscreen=1"),
+                ->where('readerUrl', '/read/JHN/1')
+                ->where('editUrl', "/read/JHN/1?note={$note->id}&fullscreen=1"),
         );
 
         $this->actingAs($user)->get('/notes')->assertOk()->assertInertia(
@@ -66,10 +66,10 @@ class NoteTest extends TestCase
                 ->where('notes.0.title', 'The Word and creation')
                 ->where('notes.0.reference', 'John 1:1')
                 ->where('notes.0.noteUrl', "/notes/{$note->id}")
-                ->where('notes.0.editUrl', "/read/oeb/JHN/1?note={$note->id}&fullscreen=1"),
+                ->where('notes.0.editUrl', "/read/JHN/1?note={$note->id}&fullscreen=1"),
         );
 
-        $this->actingAs($user)->get("/read/oeb/JHN/1?note={$note->id}")->assertOk()->assertInertia(
+        $this->actingAs($user)->get("/read/JHN/1?note={$note->id}")->assertOk()->assertInertia(
             fn (Assert $page) => $page
                 ->component('reader')
                 ->where('focusedNoteId', $note->id)
@@ -78,7 +78,7 @@ class NoteTest extends TestCase
                 ->where('notes.0.segments.0.verse', '1'),
         );
 
-        $this->actingAs($user)->get("/read/oeb/JHN/1?note={$note->id}&fullscreen=1")->assertOk()->assertInertia(
+        $this->actingAs($user)->get("/read/JHN/1?note={$note->id}&fullscreen=1")->assertOk()->assertInertia(
             fn (Assert $page) => $page
                 ->where('focusedNoteId', $note->id)
                 ->where('focusedNoteExpanded', true),
@@ -136,6 +136,70 @@ class NoteTest extends TestCase
         $this->actingAs($user)->get('/notes')->assertOk()->assertInertia(
             fn (Assert $page) => $page
                 ->where('notes.0.reference', 'John 4:7–10'),
+        );
+    }
+
+    public function test_note_index_provides_books_for_structured_note_creation(): void
+    {
+        $user = User::factory()->create();
+        $book = $this->book();
+
+        $this->actingAs($user)->get('/notes')->assertOk()->assertInertia(
+            fn (Assert $page) => $page
+                ->has('books', 1)
+                ->where('books.0.id', $book->id)
+                ->where('books.0.code', 'JHN')
+                ->where('books.0.chapterCount', 21)
+                ->where('books.0.edition.abbreviation', 'OEB'),
+        );
+    }
+
+    public function test_note_range_end_cannot_precede_its_start(): void
+    {
+        $user = User::factory()->create();
+        $book = $this->book();
+
+        $this->actingAs($user)->post('/notes', [
+            'bible_book_id' => $book->id,
+            'chapter' => '4',
+            'anchor_type' => 'range',
+            'title' => 'Invalid range',
+            'body_markdown' => 'This should not be saved.',
+            'verse_start' => '10',
+            'verse_end' => '7',
+            'segments' => [],
+        ])->assertSessionHasErrors('verse_end');
+
+        $this->assertDatabaseCount('notes', 0);
+    }
+
+    public function test_user_can_create_a_note_spanning_chapters(): void
+    {
+        $user = User::factory()->create();
+        $book = $this->book();
+
+        $this->actingAs($user)->post('/notes', [
+            'bible_book_id' => $book->id,
+            'chapter' => '1',
+            'chapter_end' => '2',
+            'anchor_type' => 'range',
+            'title' => 'John 1:18–2:4',
+            'body_markdown' => 'A note spanning a chapter boundary.',
+            'verse_start' => '18',
+            'verse_end' => '4',
+            'segments' => [],
+        ])->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('notes', [
+            'chapter' => '1',
+            'chapter_end' => '2',
+            'verse_start' => '18',
+            'verse_end' => '4',
+        ]);
+
+        $this->actingAs($user)->get('/notes')->assertOk()->assertInertia(
+            fn (Assert $page) => $page
+                ->where('notes.0.reference', 'John 1:18–2:4'),
         );
     }
 

@@ -2,10 +2,9 @@
 
 namespace Database\Seeders;
 
-use App\Models\BibleBook;
-use App\Models\BibleEdition;
 use App\Models\ScriptureArtwork;
 use App\Models\User;
+use App\Services\OebLibrary;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -16,7 +15,7 @@ class DatabaseSeeder extends Seeder
     /**
      * Seed the application's database.
      */
-    public function run(): void
+    public function run(OebLibrary $oebLibrary): void
     {
         // User::factory(10)->create();
 
@@ -28,29 +27,7 @@ class DatabaseSeeder extends Seeder
             ])->getAttributes(),
         );
 
-        $oeb = BibleEdition::query()->updateOrCreate(
-            ['slug' => 'oeb'],
-            [
-                'name' => 'Open English Bible',
-                'abbreviation' => 'OEB',
-                'language' => 'en',
-                'licence' => 'CC0',
-                'attribution' => 'Open English Bible',
-                'source_format' => 'usfm',
-                'variant_profile' => 'oeb',
-            ],
-        );
-
-        BibleBook::query()->updateOrCreate(
-            ['edition_id' => $oeb->id, 'book_code' => 'JHN'],
-            [
-                'name' => 'John',
-                'long_name' => 'The Gospel according to John',
-                'source_path' => '/bibles/oeb/43-John.usfm.db',
-                'chapter_count' => 21,
-                'canon_position' => 43,
-            ],
-        );
+        $oebLibrary->import(public_path('bibles/oeb'));
 
         $johnArtwork = ScriptureArtwork::query()->updateOrCreate(
             ['image_path' => '/images/scripture/john-olive-branch.png'],

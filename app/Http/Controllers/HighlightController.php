@@ -29,15 +29,21 @@ class HighlightController extends Controller
         $data = $this->validated($request);
 
         DB::transaction(function () use ($request, $data): void {
+            $bookCode = BibleBook::query()->whereKey($data['bible_book_id'])->value('book_code');
+            abort_unless(is_string($bookCode), 404);
             $highlight = $request->user()->highlights()->create([
                 'bible_book_id' => $data['bible_book_id'],
+                'book_code' => $bookCode,
                 'chapter' => $data['chapter'],
+                'anchor_type' => 'selection',
                 'color' => $data['color'],
                 'selected_text' => $data['selected_text'],
             ]);
 
+            /** @var array<int, array<string, mixed>> $segments */
+            $segments = $data['segments'];
             $highlight->segments()->createMany(
-                collect($data['segments'])->map(fn (array $segment, int $position) => [
+                collect($segments)->map(fn (array $segment, int $position) => [
                     ...$segment,
                     'prefix' => filled($segment['prefix'] ?? null) ? $segment['prefix'] : null,
                     'suffix' => filled($segment['suffix'] ?? null) ? $segment['suffix'] : null,
@@ -110,7 +116,6 @@ class HighlightController extends Controller
                 'abbreviation' => $book->edition->abbreviation,
             ],
             'readerUrl' => route('reader.show', [
-                'edition' => $book->edition->slug,
                 'book' => $book->book_code,
                 'chapter' => $highlight->chapter,
             ], absolute: false),

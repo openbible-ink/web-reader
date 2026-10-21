@@ -48,7 +48,7 @@ class HighlightTest extends TestCase
                 ->where('highlights.0.id', $highlight->id)
                 ->where('highlights.0.color', 'green')
                 ->where('highlights.0.reference', 'John 1:1')
-                ->where('highlights.0.readerUrl', '/read/oeb/JHN/1')
+                ->where('highlights.0.readerUrl', '/read/JHN/1')
                 ->where('highlights.0.edition.abbreviation', 'OEB'));
     }
 
@@ -87,7 +87,7 @@ class HighlightTest extends TestCase
         $this->assertCount(2, $highlight->segments);
 
         $this->actingAs($user)
-            ->get('/read/oeb/JHN/1')
+            ->get('/read/JHN/1')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('reader')

@@ -8,6 +8,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -21,7 +22,30 @@ class NoteController extends Controller
             ->get()
             ->map(fn (Note $note) => $this->serialize($note));
 
-        return Inertia::render('notes', ['notes' => $notes]);
+        $books = BibleBook::query()
+            ->with('edition')
+            ->orderBy('canon_position')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (BibleBook $book) => [
+                'id' => $book->id,
+                'code' => $book->book_code,
+                'name' => $book->name,
+                'sourceUrl' => asset($book->source_path),
+                'chapterCount' => $book->chapter_count,
+                'edition' => [
+                    'slug' => $book->edition->slug,
+                    'name' => $book->edition->name,
+                    'abbreviation' => $book->edition->abbreviation,
+                    'language' => $book->edition->language,
+                    'variantProfile' => $book->edition->variant_profile,
+                ],
+            ]);
+
+        return Inertia::render('notes', [
+            'notes' => $notes,
+            'books' => $books,
+        ]);
     }
 
     public function show(Request $request, Note $note): Response
@@ -43,6 +67,7 @@ class NoteController extends Controller
                 'verseStart' => $note->verse_start,
                 'verseEnd' => $note->verse_end,
                 'chapter' => $note->chapter,
+                'chapterEnd' => $note->chapter_end,
                 'reference' => $this->reference($book->name, $note),
                 'attachmentLabel' => $note->section_title ?: $this->reference($book->name, $note),
                 'updatedAt' => $note->updated_at?->toISOString(),
@@ -60,12 +85,10 @@ class NoteController extends Controller
                 'sourceUrl' => asset($book->source_path),
             ],
             'readerUrl' => route('reader.show', [
-                'edition' => $book->edition->slug,
                 'book' => $book->book_code,
                 'chapter' => $note->chapter,
             ], absolute: false),
             'editUrl' => route('reader.show', [
-                'edition' => $book->edition->slug,
                 'book' => $book->book_code,
                 'chapter' => $note->chapter,
                 'note' => $note->id,
@@ -110,17 +133,18 @@ class NoteController extends Controller
     /** @return array<string, mixed> */
     private function validated(Request $request): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'bible_book_id' => ['required', 'uuid', 'exists:bible_books,id'],
             'chapter' => ['required', 'string', 'max:16'],
+            'chapter_end' => ['nullable', 'string', 'max:16'],
             'anchor_type' => ['required', Rule::in(['verse', 'range', 'section', 'selection'])],
             'title' => ['required', 'string', 'max:180'],
             'body_markdown' => ['required', 'string', 'max:100000'],
             'selected_text' => ['nullable', 'string', 'max:20000'],
             'section_key' => ['nullable', 'string', 'max:255'],
             'section_title' => ['nullable', 'string', 'max:255'],
-            'verse_start' => ['nullable', 'required_if:anchor_type,range', 'string', 'max:16'],
-            'verse_end' => ['nullable', 'required_if:anchor_type,range', 'string', 'max:16'],
+            'verse_start' => ['nullable', 'required_if:anchor_type,verse,range,selection', 'string', 'max:16'],
+            'verse_end' => ['nullable', 'required_if:anchor_type,range', 'required_with:chapter_end', 'string', 'max:16'],
             'segments' => ['array', 'max:200'],
             'segments.*.verse' => ['required', 'string', 'max:16'],
             'segments.*.start_offset' => ['required', 'integer', 'min:0'],
@@ -129,6 +153,26 @@ class NoteController extends Controller
             'segments.*.prefix' => ['nullable', 'string', 'max:64'],
             'segments.*.suffix' => ['nullable', 'string', 'max:64'],
         ]);
+
+        $endChapter = $data['chapter_end'] ?? $data['chapter'];
+        if (strnatcasecmp($endChapter, $data['chapter']) < 0) {
+            throw ValidationException::withMessages([
+                'chapter_end' => 'The end chapter must be the same as or later than the start chapter.',
+            ]);
+        }
+
+        if (
+            $endChapter === $data['chapter'] &&
+            filled($data['verse_start'] ?? null) &&
+            filled($data['verse_end'] ?? null) &&
+            strnatcasecmp($data['verse_end'], $data['verse_start']) < 0
+        ) {
+            throw ValidationException::withMessages([
+                'verse_end' => 'The end verse must be the same as or later than the start verse.',
+            ]);
+        }
+
+        return $data;
     }
 
     /** @param array<string, mixed> $data
@@ -136,7 +180,13 @@ class NoteController extends Controller
      */
     private function attributes(array $data): array
     {
-        return collect($data)->except('segments')->all();
+        $bookCode = BibleBook::query()->whereKey($data['bible_book_id'])->value('book_code');
+        abort_unless(is_string($bookCode), 404);
+
+        return [
+            ...collect($data)->except('segments')->all(),
+            'book_code' => $bookCode,
+        ];
     }
 
     /** @param array<int, array<string, mixed>> $segments */
@@ -176,13 +226,11 @@ class NoteController extends Controller
                 'abbreviation' => $book->edition->abbreviation,
             ],
             'readerUrl' => route('reader.show', [
-                'edition' => $book->edition->slug,
                 'book' => $book->book_code,
                 'chapter' => $note->chapter,
             ], absolute: false),
             'noteUrl' => route('notes.show', $note, absolute: false),
             'editUrl' => route('reader.show', [
-                'edition' => $book->edition->slug,
                 'book' => $book->book_code,
                 'chapter' => $note->chapter,
                 'note' => $note->id,
@@ -196,6 +244,10 @@ class NoteController extends Controller
     {
         if (! $note->verse_start) {
             return "{$bookName} {$note->chapter}";
+        }
+
+        if ($note->chapter_end && $note->chapter_end !== $note->chapter) {
+            return "{$bookName} {$note->chapter}:{$note->verse_start}–{$note->chapter_end}:{$note->verse_end}";
         }
 
         $verses = $note->verse_start === $note->verse_end || ! $note->verse_end

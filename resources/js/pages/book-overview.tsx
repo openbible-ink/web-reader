@@ -40,7 +40,7 @@ export default function BookOverview({ edition, book }: BookOverviewProps) {
                         will be designed separately.
                     </p>
                     <Link
-                        href={`/read/${edition.slug}/${book.code}/1`}
+                        href={`/read/${book.code}/1`}
                         className="mt-10 inline-flex items-center gap-3 rounded-full bg-stone-950 px-5 py-3 text-sm font-medium text-white"
                     >
                         Start reading <ArrowRight className="size-4" />
