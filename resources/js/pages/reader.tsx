@@ -591,6 +591,13 @@ function chapterNumbers(document: BibleDocument): string[] {
         .map((node) => node.number);
 }
 
+function isSectionHeading(node: FlowNode): boolean {
+    return (
+        node.type === 'block' &&
+        (node.style.startsWith('s') || node.style.startsWith('ms'))
+    );
+}
+
 function chapterContent(document: BibleDocument, chapter: string): FlowNode[] {
     const start = document.children.findIndex(
         (node) => node.type === 'chapterStart' && node.number === chapter,
@@ -599,7 +606,26 @@ function chapterContent(document: BibleDocument, chapter: string): FlowNode[] {
     const next = document.children.findIndex(
         (node, index) => index > start && node.type === 'chapterStart',
     );
-    return document.children.slice(start + 1, next === -1 ? undefined : next);
+    let leadingHeadingStart = start;
+    while (
+        leadingHeadingStart > 0 &&
+        isSectionHeading(document.children[leadingHeadingStart - 1]!)
+    ) {
+        leadingHeadingStart -= 1;
+    }
+
+    let contentEnd = next === -1 ? document.children.length : next;
+    while (
+        contentEnd > start + 1 &&
+        isSectionHeading(document.children[contentEnd - 1]!)
+    ) {
+        contentEnd -= 1;
+    }
+
+    return [
+        ...document.children.slice(leadingHeadingStart, start),
+        ...document.children.slice(start + 1, contentEnd),
+    ];
 }
 
 function readingItems(nodes: FlowNode[]): ReadingItem[] {
@@ -1469,18 +1495,20 @@ export default function Reader({
     }, [noteOpen]);
     const chapterIndex = chapters.indexOf(chapter);
     useEffect(() => {
-        if (
-            window.sessionStorage.getItem(chapterNavigationPositionKey) !==
-            'true'
-        ) {
+        const navigationPosition = window.sessionStorage.getItem(
+            chapterNavigationPositionKey,
+        );
+        if (navigationPosition !== 'reader' && navigationPosition !== 'page')
             return;
-        }
 
         window.sessionStorage.removeItem(chapterNavigationPositionKey);
         const alignmentTimer = window.setTimeout(() => {
-            const readerTop = readerMainRef.current?.offsetTop;
-            if (readerTop === undefined) return;
-            window.scrollTo({ top: readerTop, behavior: 'auto' });
+            const destinationTop =
+                navigationPosition === 'reader'
+                    ? readerMainRef.current?.offsetTop
+                    : 0;
+            if (destinationTop === undefined) return;
+            window.scrollTo({ top: destinationTop, behavior: 'auto' });
 
             if (
                 window.document.documentElement.dataset
@@ -1494,23 +1522,35 @@ export default function Reader({
                 delete window.document.documentElement.dataset
                     .chapterTransitionFallback;
 
-                const entrance = readerArticleRef.current?.animate(
-                    [
+                const entranceTargets = [
+                    readerArticleRef.current,
+                    ...(navigationPosition === 'page'
+                        ? [heroTextRef.current]
+                        : []),
+                ].filter((target): target is HTMLElement => target !== null);
+                const entrances = entranceTargets.map((target) =>
+                    target.animate(
+                        [
+                            {
+                                opacity: 0,
+                                transform: `translateX(${direction === 'forward' ? '3rem' : '-3rem'})`,
+                            },
+                            { opacity: 1, transform: 'translateX(0)' },
+                        ],
                         {
-                            opacity: 0,
-                            transform: `translateX(${direction === 'forward' ? '3rem' : '-3rem'})`,
+                            duration: 240,
+                            easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+                            fill: 'both',
                         },
-                        { opacity: 1, transform: 'translateX(0)' },
-                    ],
-                    {
-                        duration: 240,
-                        easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
-                        fill: 'both',
-                    },
+                    ),
                 );
-                void entrance?.finished.finally(() => {
+                void Promise.allSettled(
+                    entrances.map((entrance) => entrance.finished),
+                ).finally(() => {
                     delete window.document.documentElement.dataset
                         .chapterTransitionDirection;
+                    delete window.document.documentElement.dataset
+                        .chapterTransitionPosition;
                 });
             }
         }, 50);
@@ -1617,23 +1657,32 @@ export default function Reader({
             (readerMainRef.current?.getBoundingClientRect().top ?? 2) <= 1;
         const direction =
             Number(nextChapter) < Number(chapter) ? 'backward' : 'forward';
-        if (
-            keepReaderDocked &&
-            !window.matchMedia('(prefers-reduced-motion: reduce)').matches
-        ) {
-            window.sessionStorage.setItem(chapterNavigationPositionKey, 'true');
+        const navigationPosition = keepReaderDocked ? 'reader' : 'page';
+        if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            window.sessionStorage.setItem(
+                chapterNavigationPositionKey,
+                navigationPosition,
+            );
             window.document.documentElement.dataset.chapterTransitionDirection =
                 direction;
+            window.document.documentElement.dataset.chapterTransitionPosition =
+                navigationPosition;
 
-            const exit = readerArticleRef.current?.animate(
-                [
-                    { opacity: 1, transform: 'translateX(0)' },
-                    {
-                        opacity: 0,
-                        transform: `translateX(${direction === 'forward' ? '-3rem' : '3rem'})`,
-                    },
-                ],
-                { duration: 170, easing: 'ease-in', fill: 'both' },
+            const exitTargets = [
+                readerArticleRef.current,
+                ...(navigationPosition === 'page' ? [heroTextRef.current] : []),
+            ].filter((target): target is HTMLElement => target !== null);
+            const exits = exitTargets.map((target) =>
+                target.animate(
+                    [
+                        { opacity: 1, transform: 'translateX(0)' },
+                        {
+                            opacity: 0,
+                            transform: `translateX(${direction === 'forward' ? '-3rem' : '3rem'})`,
+                        },
+                    ],
+                    { duration: 170, easing: 'ease-in', fill: 'both' },
+                ),
             );
             const navigate = () => {
                 window.document.documentElement.dataset.chapterTransitionFallback =
@@ -1643,8 +1692,10 @@ export default function Reader({
                 });
             };
 
-            if (exit) {
-                void exit.finished.finally(navigate);
+            if (exits.length) {
+                void Promise.allSettled(
+                    exits.map((exit) => exit.finished),
+                ).finally(navigate);
             } else {
                 navigate();
             }
@@ -1652,7 +1703,10 @@ export default function Reader({
         }
 
         if (keepReaderDocked) {
-            window.sessionStorage.setItem(chapterNavigationPositionKey, 'true');
+            window.sessionStorage.setItem(
+                chapterNavigationPositionKey,
+                'reader',
+            );
         } else {
             window.sessionStorage.removeItem(chapterNavigationPositionKey);
         }
@@ -2376,6 +2430,7 @@ export default function Reader({
                     <div className="absolute inset-0 bg-gradient-to-r from-[#f5ead5]/95 via-[#f5ead5]/38 to-transparent" />
                     <div
                         ref={heroTextRef}
+                        data-reader-hero-text
                         className="absolute inset-x-0 bottom-14 z-10 px-7 will-change-transform sm:px-12 lg:bottom-12 lg:px-[3.4rem]"
                     >
                         <p className="max-w-52 text-[0.72rem] font-semibold tracking-[0.3em] uppercase">

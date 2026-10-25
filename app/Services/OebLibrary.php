@@ -9,6 +9,8 @@ use RuntimeException;
 
 class OebLibrary
 {
+    public function __construct(private readonly OebSourcePatcher $patcher) {}
+
     /** @var array<int, string> */
     public const CANON = [
         1 => 'Genesis', 2 => 'Exodus', 3 => 'Leviticus', 4 => 'Numbers', 5 => 'Deuteronomy',
@@ -42,7 +44,7 @@ class OebLibrary
         );
     }
 
-    /** @return array{imported: int, missing: array<int, string>, incomplete: array<int, string>} */
+    /** @return array{imported: int, missing: array<int, string>, incomplete: array<int, string>, patches: list<string>} */
     public function import(string $sourceDirectory): array
     {
         if (! File::isDirectory($sourceDirectory)) {
@@ -54,6 +56,7 @@ class OebLibrary
         $importedPositions = [];
         $suppliedPositions = [];
         $incomplete = [];
+        $appliedPatches = [];
         $edition = $this->edition();
 
         foreach (File::glob(rtrim($sourceDirectory, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'*.usfm.db') as $sourcePath) {
@@ -70,6 +73,9 @@ class OebLibrary
             $suppliedPositions[] = $position;
 
             $source = File::get($sourcePath);
+            $patched = $this->patcher->apply($filename, $source);
+            $source = $patched['source'];
+            array_push($appliedPatches, ...$patched['applied']);
             try {
                 $metadata = $this->metadata($source, $position);
             } catch (RuntimeException) {
@@ -78,9 +84,7 @@ class OebLibrary
                 continue;
             }
             $destinationPath = $destination.DIRECTORY_SEPARATOR.$filename;
-            if (realpath($sourcePath) !== realpath($destinationPath)) {
-                File::copy($sourcePath, $destinationPath);
-            }
+            File::put($destinationPath, $source);
 
             $attributes = [
                 'name' => $metadata['name'],
@@ -101,7 +105,12 @@ class OebLibrary
 
         $missing = array_diff_key(self::CANON, array_flip($suppliedPositions));
 
-        return ['imported' => count($importedPositions), 'missing' => $missing, 'incomplete' => $incomplete];
+        return [
+            'imported' => count($importedPositions),
+            'missing' => $missing,
+            'incomplete' => $incomplete,
+            'patches' => array_values(array_unique($appliedPatches)),
+        ];
     }
 
     /** @return array{code: string, name: string, longName: string|null, chapterCount: int} */

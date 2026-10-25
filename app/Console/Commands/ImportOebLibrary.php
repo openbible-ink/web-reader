@@ -23,6 +23,12 @@ class ImportOebLibrary extends Command
         }
 
         $this->info("Imported {$result['imported']} OEB books.");
+        if ($result['patches'] !== []) {
+            $this->info('Applied documented source patches:');
+            foreach ($result['patches'] as $patch) {
+                $this->line("  {$patch}");
+            }
+        }
         if ($result['missing'] !== []) {
             $this->warn('Not present in the supplied source:');
             foreach ($result['missing'] as $position => $name) {

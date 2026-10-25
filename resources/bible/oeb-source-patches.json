@@ -1,0 +1,19 @@
+{
+    "schemaVersion": 1,
+    "source": {
+        "name": "Open English Bible",
+        "repository": "https://github.com/openenglishbible/Open-English-Bible",
+        "path": "source/"
+    },
+    "patches": [
+        {
+            "id": "oeb-ezk-37-verse-numbering-001",
+            "file": "26-Ezekiel.usfm.db",
+            "reference": "Ezekiel 37:27-28",
+            "reason": "The upstream source skips verse 27 and labels the final two verses 28 and 29. Standard Ezekiel 37 versification ends at verse 28.",
+            "introducedAgainstRevision": "1965127de5c3c103af3fdbc9288c1abec5f39994",
+            "expected": "\\v 28 My dwelling place also shall be with them; and I will be their God, and they shall be my people.\n\\v 29 And the nations shall know that I am Jehovah who sanctifieth Israel, when my sanctuary shall be in the midst of them forevermore.”’",
+            "replacement": "\\v 27 My dwelling place also shall be with them; and I will be their God, and they shall be my people.\n\\v 28 And the nations shall know that I am Jehovah who sanctifieth Israel, when my sanctuary shall be in the midst of them forevermore.”’"
+        }
+    ]
+}
