@@ -1,5 +1,12 @@
 import { Head, Link, router } from '@inertiajs/react';
-import { ArrowLeft, BookOpen, Highlighter, Trash2 } from 'lucide-react';
+import {
+    ArrowLeft,
+    BookOpen,
+    ChevronLeft,
+    ChevronRight,
+    Highlighter,
+    Trash2,
+} from 'lucide-react';
 
 const colours = {
     yellow: { label: 'Gold', swatch: '#d9a441', wash: '#f6e7ac' },
@@ -19,11 +26,51 @@ interface HighlightItem {
     edition: { name: string; abbreviation: string };
 }
 
+interface PaginatedHighlights {
+    data: HighlightItem[];
+    currentPage: number;
+    lastPage: number;
+    perPage: number;
+    total: number;
+    from: number | null;
+    to: number | null;
+}
+
 export default function Highlights({
     highlights,
+    highlightLabels,
+    colourCounts,
+    activeColour,
 }: {
-    highlights: HighlightItem[];
+    highlights: PaginatedHighlights;
+    highlightLabels: Record<HighlightColour, string>;
+    colourCounts: Record<HighlightColour, number>;
+    activeColour: HighlightColour | null;
 }) {
+    const totalHighlights = Object.values(colourCounts).reduce(
+        (total, count) => total + count,
+        0,
+    );
+    const highlightLabel = (colour: HighlightColour) =>
+        highlightLabels[colour]?.trim() || colours[colour].label;
+    const loadHighlights = (
+        colour: HighlightColour | null,
+        page = 1,
+    ) => {
+        router.get(
+            '/highlights',
+            {
+                ...(colour ? { colour } : {}),
+                ...(page > 1 ? { page } : {}),
+            },
+            {
+                preserveScroll: true,
+                preserveState: true,
+                replace: true,
+                only: ['highlights', 'colourCounts', 'activeColour'],
+            },
+        );
+    };
     const recolour = (highlight: HighlightItem, color: HighlightColour) => {
         if (color === highlight.color) return;
         router.patch(
@@ -83,17 +130,69 @@ export default function Highlights({
                                 Words and passages that stood out to you.
                             </p>
                         </div>
-                        <span className="font-serif text-sm text-[#8a8277]">
-                            {highlights.length}{' '}
-                            {highlights.length === 1
-                                ? 'highlight'
-                                : 'highlights'}
-                        </span>
+                        <div className="flex flex-col items-end gap-2">
+                            <span className="font-serif text-sm text-[#8a8277]">
+                                {totalHighlights}{' '}
+                                {totalHighlights === 1
+                                    ? 'highlight'
+                                    : 'highlights'}
+                            </span>
+                            <Link
+                                href="/dashboard#preferences"
+                                className="font-serif text-xs text-[#9a672d] underline decoration-[#9a672d]/35 underline-offset-4 hover:decoration-current"
+                            >
+                                Edit colour labels
+                            </Link>
+                        </div>
                     </div>
 
-                    {highlights.length ? (
+                    <nav
+                        aria-label="Filter highlights by colour"
+                        className="mt-8 flex flex-wrap gap-2"
+                    >
+                        <button
+                            type="button"
+                            onClick={() => loadHighlights(null)}
+                            aria-pressed={activeColour === null}
+                            className={`cursor-pointer rounded-full border px-4 py-2 font-serif text-sm transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9a672d] ${activeColour === null ? 'border-[#2d2b26] bg-[#2d2b26] text-[#fffaf1]' : 'border-[#d6cdc0] bg-[#fffaf2]/65 hover:bg-white'}`}
+                        >
+                            All{' '}
+                            <span className="opacity-65">
+                                ({totalHighlights})
+                            </span>
+                        </button>
+                        {(Object.keys(colours) as HighlightColour[]).map(
+                            (colour) => {
+                                const selected = activeColour === colour;
+                                return (
+                                    <button
+                                        key={colour}
+                                        type="button"
+                                        onClick={() => loadHighlights(colour)}
+                                        aria-pressed={selected}
+                                        className={`flex cursor-pointer items-center gap-2 rounded-full border px-3 py-2 font-serif text-sm transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9a672d] ${selected ? 'border-[#2d2b26] bg-[#fffdf8] shadow-sm' : 'border-[#d6cdc0] bg-[#fffaf2]/65 hover:bg-white'}`}
+                                    >
+                                        <span
+                                            aria-hidden="true"
+                                            className="size-4 rounded-full ring-1 ring-black/10"
+                                            style={{
+                                                backgroundColor:
+                                                    colours[colour].swatch,
+                                            }}
+                                        />
+                                        <span>{highlightLabel(colour)}</span>
+                                        <span className="opacity-55">
+                                            ({colourCounts[colour]})
+                                        </span>
+                                    </button>
+                                );
+                            },
+                        )}
+                    </nav>
+
+                    {highlights.data.length ? (
                         <div className="mt-9 space-y-4">
-                            {highlights.map((highlight) => {
+                            {highlights.data.map((highlight) => {
                                 const colour = colours[highlight.color];
                                 return (
                                     <article
@@ -136,6 +235,21 @@ export default function Highlights({
                                                         }
                                                         )
                                                     </p>
+                                                    {highlightLabels[
+                                                        highlight.color
+                                                    ]?.trim() && (
+                                                        <span
+                                                            className="mt-3 inline-flex rounded-full px-3 py-1 font-sans text-xs font-semibold text-[#4f493f]"
+                                                            style={{
+                                                                backgroundColor:
+                                                                    colour.wash,
+                                                            }}
+                                                        >
+                                                            {highlightLabel(
+                                                                highlight.color,
+                                                            )}
+                                                        </span>
+                                                    )}
                                                 </Link>
                                                 <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-[#e7dfd4] pt-4">
                                                     <fieldset className="flex items-center gap-2">
@@ -165,7 +279,10 @@ export default function Highlights({
                                                                                 ? option.swatch
                                                                                 : 'transparent',
                                                                     }}
-                                                                    aria-label={`Change ${highlight.reference} highlight to ${option.label}`}
+                                                                    aria-label={`Change ${highlight.reference} highlight to ${highlightLabel(key as HighlightColour)}`}
+                                                                    title={highlightLabel(
+                                                                        key as HighlightColour,
+                                                                    )}
                                                                     aria-pressed={
                                                                         key ===
                                                                         highlight.color
@@ -191,16 +308,61 @@ export default function Highlights({
                                     </article>
                                 );
                             })}
+                            {highlights.lastPage > 1 && (
+                                <nav
+                                    aria-label="Highlights pagination"
+                                    className="flex items-center justify-between border-t border-[#d9d0c4] pt-5"
+                                >
+                                    <button
+                                        type="button"
+                                        disabled={highlights.currentPage <= 1}
+                                        onClick={() =>
+                                            loadHighlights(
+                                                activeColour,
+                                                highlights.currentPage - 1,
+                                            )
+                                        }
+                                        className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#d6cdc0] bg-[#fffaf2]/65 px-4 py-2 font-serif text-sm transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9a672d] disabled:cursor-not-allowed disabled:opacity-40"
+                                    >
+                                        <ChevronLeft className="size-4" />
+                                        Previous
+                                    </button>
+                                    <span className="font-serif text-sm text-[#7b7368]">
+                                        Page {highlights.currentPage} of{' '}
+                                        {highlights.lastPage}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        disabled={
+                                            highlights.currentPage >=
+                                            highlights.lastPage
+                                        }
+                                        onClick={() =>
+                                            loadHighlights(
+                                                activeColour,
+                                                highlights.currentPage + 1,
+                                            )
+                                        }
+                                        className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#d6cdc0] bg-[#fffaf2]/65 px-4 py-2 font-serif text-sm transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9a672d] disabled:cursor-not-allowed disabled:opacity-40"
+                                    >
+                                        Next
+                                        <ChevronRight className="size-4" />
+                                    </button>
+                                </nav>
+                            )}
                         </div>
                     ) : (
                         <section className="mt-9 flex min-h-80 flex-col items-center justify-center rounded-2xl border border-dashed border-[#d4cabd] bg-[#faf6ef]/70 px-6 text-center">
                             <Highlighter className="size-10 stroke-[#927651] stroke-[1.25]" />
                             <h2 className="mt-4 font-serif text-2xl">
-                                No highlights yet
+                                {activeColour
+                                    ? `No ${highlightLabel(activeColour)} highlights yet`
+                                    : 'No highlights yet'}
                             </h2>
                             <p className="mt-2 max-w-md font-serif leading-7 text-[#7b7368]">
-                                Select some text in the reader, then choose a
-                                colour to save your first highlight.
+                                {activeColour
+                                    ? 'Choose another colour above, or add one from the reader.'
+                                    : 'Select some text in the reader, then choose a colour to save your first highlight.'}
                             </p>
                             <Link
                                 href="/read/JHN/1"

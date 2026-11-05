@@ -4,6 +4,8 @@ import {
     ArrowRight,
     Bookmark,
     BookOpen,
+    Check,
+    ChevronDown,
     Highlighter,
     List,
     Maximize2,
@@ -103,8 +105,12 @@ interface ReaderProps {
         slug: string;
         name: string;
         abbreviation: string;
+        language: string;
+        licence?: string | null;
+        attribution?: string | null;
         bookCode: string;
     }>;
+    defaultEditionSlug: string;
     libraryBooks: Array<{
         code: string;
         name: string;
@@ -115,6 +121,7 @@ interface ReaderProps {
     bookmarks?: ChapterBookmark[];
     focusedBookmark?: ChapterBookmark | null;
     highlights?: ScriptureHighlight[];
+    highlightLabels: Record<HighlightColor, string>;
     notes?: ScriptureNote[];
     focusedNoteId?: string | null;
     focusedNoteExpanded?: boolean;
@@ -215,15 +222,17 @@ function NoteMarker({
     notes,
     onClick,
     variant = 'verse',
+    className = '',
 }: {
     notes: ScriptureNote[];
     onClick: () => void;
     variant?: 'verse' | 'section';
+    className?: string;
 }) {
     const isSection = variant === 'section';
 
     return (
-        <span className="group/note relative flex justify-end pt-0.5 font-sans">
+        <span className={`group/note relative flex justify-end pt-0.5 font-sans ${className}`}>
             <button
                 type="button"
                 onClick={onClick}
@@ -949,12 +958,14 @@ export default function Reader({
     book,
     chapter,
     focusedSectionKey,
-    availableEditions: _availableEditions,
+    availableEditions,
+    defaultEditionSlug,
     libraryBooks,
     artworks = [],
     bookmarks = [],
     focusedBookmark,
     highlights = [],
+    highlightLabels,
     notes = [],
     focusedNoteId,
     focusedNoteExpanded = false,
@@ -974,6 +985,7 @@ export default function Reader({
     const [typography, setTypography] =
         useState<TypographyPreferences>(savedTypography);
     const [editionPreferencesOpen, setEditionPreferencesOpen] = useState(false);
+    const [translationOpen, setTranslationOpen] = useState(false);
     const [typographyOpen, setTypographyOpen] = useState(false);
     const [outlineOpen, setOutlineOpen] = useState(false);
     const [targetSectionKey, setTargetSectionKey] = useState(
@@ -1014,6 +1026,7 @@ export default function Reader({
     const [noteProcessing, setNoteProcessing] = useState(false);
     const [noteError, setNoteError] = useState<string>();
     const editionPreferencesRef = useRef<HTMLDivElement>(null);
+    const translationRef = useRef<HTMLDivElement>(null);
     const typographyRef = useRef<HTMLDivElement>(null);
     const outlineRef = useRef<HTMLDivElement>(null);
     const bookmarkRef = useRef<HTMLDivElement>(null);
@@ -1100,6 +1113,7 @@ export default function Reader({
     useEffect(() => {
         if (
             !editionPreferencesOpen &&
+            !translationOpen &&
             !typographyOpen &&
             !outlineOpen &&
             !bookmarkOpen &&
@@ -1120,6 +1134,7 @@ export default function Reader({
                 return;
             }
             setEditionPreferencesOpen(false);
+            setTranslationOpen(false);
             setTypographyOpen(false);
             setOutlineOpen(false);
             setBookmarkOpen(false);
@@ -1136,6 +1151,12 @@ export default function Reader({
                 !editionPreferencesRef.current?.contains(target)
             ) {
                 setEditionPreferencesOpen(false);
+            }
+            if (
+                translationOpen &&
+                !translationRef.current?.contains(target)
+            ) {
+                setTranslationOpen(false);
             }
             if (typographyOpen && !typographyRef.current?.contains(target)) {
                 setTypographyOpen(false);
@@ -1184,6 +1205,7 @@ export default function Reader({
         noteReferenceOpen,
         outlineOpen,
         typographyOpen,
+        translationOpen,
     ]);
 
     const openFootnote = useCallback(
@@ -1652,6 +1674,31 @@ export default function Reader({
         key: Key,
         value: TypographyPreferences[Key],
     ) => setTypography((current) => ({ ...current, [key]: value }));
+    const switchTranslation = (slug: string) => {
+        if (slug === edition.slug) {
+            setTranslationOpen(false);
+            return;
+        }
+        const url = new URL(window.location.href);
+        url.searchParams.set('translation', slug);
+        setTranslationOpen(false);
+        router.visit(`${url.pathname}${url.search}`, {
+            preserveScroll: true,
+        });
+    };
+    const makeDefaultTranslation = (slug: string) => {
+        router.patch(
+            '/settings/default-translation',
+            { translation: slug },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setTranslationOpen(false);
+                    toast.success(`${edition.name} is now your default`);
+                },
+            },
+        );
+    };
     const changeChapter = (nextChapter: string) => {
         const keepReaderDocked =
             (readerMainRef.current?.getBoundingClientRect().top ?? 2) <= 1;
@@ -2190,6 +2237,10 @@ export default function Reader({
             : typography.theme === 'sepia'
               ? 'border-[#d8c8aa]'
               : 'border-stone-200';
+    const highlightLabel = (colour: HighlightColor): string =>
+        highlightLabels[colour]?.trim() ||
+        highlightColors.find(({ value }) => value === colour)?.label ||
+        colour;
     const outlineSurface =
         typography.theme === 'dark'
             ? 'border-stone-700 bg-[#292621] text-[#f3ede3]'
@@ -2486,6 +2537,81 @@ export default function Reader({
                                     className="font-serif text-lg font-semibold"
                                     triggerClassName="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--reader-accent)] focus-visible:ring-0"
                                 />
+                                <div ref={translationRef} className="relative">
+                                    <button
+                                        type="button"
+                                        aria-label={`Translation: ${edition.name}`}
+                                        aria-haspopup="dialog"
+                                        aria-expanded={translationOpen}
+                                        onClick={() => {
+                                            setTranslationOpen((open) => !open);
+                                            setTypographyOpen(false);
+                                            setOutlineOpen(false);
+                                            setEditionPreferencesOpen(false);
+                                            setHighlightOpen(false);
+                                        }}
+                                        className={`flex cursor-pointer items-center gap-1 rounded-full border px-2.5 py-2 text-xs font-semibold tracking-[0.08em] transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--reader-accent)] sm:px-3 ${readerPanelControlState(translationOpen)} ${typography.theme === 'dark' ? 'border-stone-600 text-stone-200 hover:bg-white/12' : 'border-stone-300 text-stone-700 hover:bg-black/6'}`}
+                                    >
+                                        {edition.abbreviation}
+                                        <ChevronDown
+                                            className={`size-3.5 transition-transform ${translationOpen ? 'rotate-180' : ''}`}
+                                        />
+                                    </button>
+                                    {translationOpen && (
+                                        <section
+                                            role="dialog"
+                                            aria-label="Choose translation"
+                                            className={`fixed top-[5rem] right-4 left-4 z-50 overflow-hidden rounded-2xl border font-sans shadow-[0_20px_60px_rgba(41,37,36,0.22)] sm:absolute sm:top-12 sm:right-auto sm:left-0 sm:w-[23rem] ${outlineSurface}`}
+                                        >
+                                            <div className={`border-b px-5 py-4 ${readerDivider}`}>
+                                                <h2 className="font-serif text-xl font-semibold">
+                                                    Bible translation
+                                                </h2>
+                                                <p className={`mt-1 text-xs ${readerMutedText}`}>
+                                                    Switch this reading session without changing your default.
+                                                </p>
+                                            </div>
+                                            <div className="grid gap-1 p-2">
+                                                {availableEditions.map((available) => {
+                                                    const selected = available.slug === edition.slug;
+                                                    return (
+                                                        <button
+                                                            key={available.slug}
+                                                            type="button"
+                                                            onClick={() => switchTranslation(available.slug)}
+                                                            className={`flex cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-left transition focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--reader-accent)] ${selected ? typography.theme === 'dark' ? 'bg-white/10' : 'bg-[#f4eadc]' : outlineItemHover}`}
+                                                        >
+                                                            <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-current/15 font-serif text-xs font-bold">
+                                                                {available.abbreviation}
+                                                            </span>
+                                                            <span className="min-w-0 flex-1">
+                                                                <span className="block font-serif text-sm font-semibold">
+                                                                    {available.name}
+                                                                </span>
+                                                                <span className={`mt-0.5 block text-[0.68rem] ${readerMutedText}`}>
+                                                                    {available.language}
+                                                                    {available.slug === defaultEditionSlug ? ' · Default' : ''}
+                                                                </span>
+                                                            </span>
+                                                            {selected && <Check className="size-4 shrink-0" />}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                            {auth.user && edition.slug !== defaultEditionSlug && (
+                                                <div className={`border-t px-4 py-3 ${readerDivider}`}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => makeDefaultTranslation(edition.slug)}
+                                                        className="w-full cursor-pointer rounded-xl px-3 py-2 text-left text-xs font-semibold text-[var(--reader-accent)] transition hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-[var(--reader-accent)]"
+                                                    >
+                                                        Make {edition.abbreviation} my default translation
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </section>
+                                    )}
+                                </div>
                             </div>
                             <div className="flex items-center gap-1">
                                 <button
@@ -2799,7 +2925,7 @@ export default function Reader({
                                                     >
                                                         Choose a colour to save
                                                     </p>
-                                                    <div className="mt-3 flex gap-3">
+                                                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
                                                         {highlightColors.map(
                                                             (color) => (
                                                                 <button
@@ -2820,9 +2946,19 @@ export default function Reader({
                                                                             color.value,
                                                                         )
                                                                     }
-                                                                    aria-label={`Save as ${color.label}`}
-                                                                    className={`size-9 rounded-full border-2 border-white shadow-sm ring-1 ring-black/20 transition hover:scale-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--reader-accent)] disabled:opacity-50 ${color.className}`}
-                                                                />
+                                                                    aria-label={`Save as ${highlightLabel(color.value)}`}
+                                                                    className={`flex min-w-0 cursor-pointer items-center gap-2 rounded-xl border px-2.5 py-2 text-left text-xs font-semibold transition hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--reader-accent)] disabled:opacity-50 ${readerDivider}`}
+                                                                >
+                                                                    <span
+                                                                        aria-hidden="true"
+                                                                        className={`size-6 shrink-0 rounded-full border-2 border-white shadow-sm ring-1 ring-black/20 ${color.className}`}
+                                                                    />
+                                                                    <span className="truncate">
+                                                                        {highlightLabel(
+                                                                            color.value,
+                                                                        )}
+                                                                    </span>
+                                                                </button>
                                                             ),
                                                         )}
                                                     </div>
@@ -2860,6 +2996,16 @@ export default function Reader({
                                                                         }
                                                                         ”
                                                                     </p>
+                                                                    {highlightLabels[
+                                                                        highlight
+                                                                            .color
+                                                                    ]?.trim() && (
+                                                                        <span className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[0.65rem] font-semibold ${readerDivider}`}>
+                                                                            {highlightLabel(
+                                                                                highlight.color,
+                                                                            )}
+                                                                        </span>
+                                                                    )}
                                                                     <div className="mt-3 flex items-center gap-2">
                                                                         <span
                                                                             className={`mr-auto text-xs ${readerMutedText}`}
@@ -2883,7 +3029,10 @@ export default function Reader({
                                                                                             color.value,
                                                                                         )
                                                                                     }
-                                                                                    aria-label={`Change to ${color.label}`}
+                                                                                    aria-label={`Change to ${highlightLabel(color.value)}`}
+                                                                                    title={highlightLabel(
+                                                                                        color.value,
+                                                                                    )}
                                                                                     aria-pressed={
                                                                                         highlight.color ===
                                                                                         color.value
@@ -3311,10 +3460,10 @@ export default function Reader({
                                     <div
                                         key={item.key}
                                         id={`section-${item.key}`}
-                                        className={`group/section flex scroll-mt-[6.5rem] items-center justify-between gap-3 ${index ? `mt-12 border-t pt-7 ${readerDivider}` : ''} mb-4`}
+                                        className={`group/section grid scroll-mt-[6.5rem] grid-cols-[4.5rem_1.5rem_minmax(0,1fr)_2.75rem] items-center gap-x-2 ${index ? `mt-12 border-t pt-7 ${readerDivider}` : ''} mb-4`}
                                     >
                                         <h2
-                                            className={`font-sans text-[0.68rem] font-semibold tracking-[0.29em] uppercase ${readerMutedText}`}
+                                            className={`col-start-3 font-sans text-[0.68rem] font-semibold tracking-[0.29em] uppercase ${readerMutedText}`}
                                         >
                                             {renderInlineSequence(
                                                 item.content,
@@ -3325,6 +3474,7 @@ export default function Reader({
                                             <NoteMarker
                                                 notes={notesForSection(item)}
                                                 variant="section"
+                                                className="col-start-4"
                                                 onClick={() =>
                                                     openNotesForSection(item)
                                                 }
@@ -3846,7 +3996,8 @@ export default function Reader({
                                 type="button"
                                 disabled={highlightProcessing}
                                 onClick={() => saveHighlight(color.value)}
-                                aria-label={`Highlight ${color.label}`}
+                                aria-label={`Highlight as ${highlightLabel(color.value)}`}
+                                title={highlightLabel(color.value)}
                                 className={`size-8 rounded-full border-2 border-white shadow-sm ring-1 ring-black/20 transition hover:scale-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9a5428] disabled:opacity-50 ${color.className}`}
                             />
                         ))}

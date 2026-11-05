@@ -44,12 +44,89 @@ class HighlightTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('highlights')
-                ->has('highlights', 1)
-                ->where('highlights.0.id', $highlight->id)
-                ->where('highlights.0.color', 'green')
-                ->where('highlights.0.reference', 'John 1:1')
-                ->where('highlights.0.readerUrl', '/read/JHN/1')
-                ->where('highlights.0.edition.abbreviation', 'OEB'));
+                ->has('highlights.data', 1)
+                ->where('highlights.total', 1)
+                ->where('highlights.currentPage', 1)
+                ->where('highlights.data.0.id', $highlight->id)
+                ->where('highlights.data.0.color', 'green')
+                ->where('highlights.data.0.reference', 'John 1:1')
+                ->where('highlights.data.0.readerUrl', '/read/JHN/1')
+                ->where('highlights.data.0.edition.abbreviation', 'OEB')
+                ->where('colourCounts.green', 1)
+                ->where('activeColour', null)
+                ->where('highlightLabels.yellow', 'Gold')
+                ->where('highlightLabels.rose', 'Red'));
+    }
+
+    public function test_highlights_can_be_filtered_by_colour_and_are_paginated(): void
+    {
+        $user = User::factory()->create();
+        $book = $this->book();
+
+        foreach (range(1, 9) as $index) {
+            $highlight = Highlight::query()->create([
+                'user_id' => $user->id,
+                'bible_book_id' => $book->id,
+                'chapter' => '1',
+                'color' => $index === 9 ? 'rose' : 'yellow',
+                'selected_text' => "Highlight {$index}",
+            ]);
+            $highlight->segments()->create([
+                'verse' => (string) $index,
+                'start_offset' => 0,
+                'end_offset' => 5,
+                'exact_text' => 'Words',
+                'position' => 0,
+            ]);
+        }
+
+        $this->actingAs($user)
+            ->get('/highlights')
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('highlights.data', 8)
+                ->where('highlights.total', 9)
+                ->where('highlights.lastPage', 2)
+                ->where('colourCounts.yellow', 8)
+                ->where('colourCounts.rose', 1));
+
+        $this->get('/highlights?colour=rose')
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('highlights.data', 1)
+                ->where('highlights.total', 1)
+                ->where('highlights.data.0.color', 'rose')
+                ->where('activeColour', 'rose')
+                ->where('colourCounts.yellow', 8));
+    }
+
+    public function test_user_can_personalise_highlight_colour_labels(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->from('/dashboard#preferences')
+            ->patch(route('highlight-labels.update'), [
+                'labels' => [
+                    'yellow' => 'Important',
+                    'green' => 'Close to my heart',
+                    'blue' => 'Study further',
+                    'rose' => 'Questions',
+                ],
+            ])
+            ->assertRedirect('/dashboard#preferences')
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame([
+            'yellow' => 'Important',
+            'green' => 'Close to my heart',
+            'blue' => 'Study further',
+            'rose' => 'Questions',
+        ], $user->refresh()->highlight_colour_labels);
+
+        $this->actingAs($user)
+            ->get('/highlights')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('highlightLabels.green', 'Close to my heart')
+                ->where('highlightLabels.rose', 'Questions'));
     }
 
     public function test_user_can_create_recolour_and_remove_a_partial_multi_verse_highlight(): void

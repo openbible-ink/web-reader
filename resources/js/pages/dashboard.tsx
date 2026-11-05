@@ -14,6 +14,7 @@ import {
     Menu,
     Pencil,
     Search,
+    Save,
     Settings2,
     UserRound,
     X,
@@ -23,6 +24,7 @@ import { useAppearance } from '@/hooks/use-appearance';
 import { logout } from '@/routes';
 import { edit as editAppearance } from '@/routes/appearance';
 import { edit as editProfile } from '@/routes/profile';
+import CustomSelect from '@/components/custom-select';
 
 const navigation = [
     { label: 'Home', icon: Home, href: '/dashboard' },
@@ -58,6 +60,13 @@ interface DashboardProps {
     noteCount: number;
     savedTab: SavedTab;
     savedItems: PaginatedSavedItems;
+    availableEditions: Array<{
+        slug: string;
+        name: string;
+        abbreviation: string;
+    }>;
+    defaultEditionSlug: string;
+    highlightLabels: Record<DashboardHighlight['color'], string>;
 }
 
 interface PaginatedSavedItems {
@@ -186,11 +195,17 @@ export default function Dashboard({
     noteCount,
     savedTab,
     savedItems,
+    availableEditions,
+    defaultEditionSlug,
+    highlightLabels,
 }: DashboardProps) {
     const { auth } = usePage().props;
     const { appearance, resolvedAppearance } = useAppearance();
     const [mobileNavOpen, setMobileNavOpen] = useState(false);
     const [savedItemsLoading, setSavedItemsLoading] = useState(false);
+    const [editableHighlightLabels, setEditableHighlightLabels] =
+        useState(highlightLabels);
+    const [highlightLabelsSaving, setHighlightLabelsSaving] = useState(false);
     const user = auth.user;
     const themeLabel =
         appearance === 'system'
@@ -218,6 +233,18 @@ export default function Dashboard({
         savedTab === 'bookmarks'
             ? (savedItems.data as DashboardBookmark[])
             : [];
+
+    const saveHighlightLabels = () => {
+        router.patch(
+            '/settings/highlight-labels',
+            { labels: editableHighlightLabels },
+            {
+                preserveScroll: true,
+                onStart: () => setHighlightLabelsSaving(true),
+                onFinish: () => setHighlightLabelsSaving(false),
+            },
+        );
+    };
 
     const loadSavedItems = (tab: SavedTab, page = 1) => {
         if (
@@ -548,6 +575,19 @@ export default function Dashboard({
                                                                             highlight.edition
                                                                         }
                                                                     </p>
+                                                                    {highlightLabels[
+                                                                        highlight
+                                                                            .color
+                                                                    ] && (
+                                                                        <span className="mt-2 inline-flex rounded-full bg-[#eee5d8] px-2.5 py-1 font-sans text-[0.65rem] font-semibold text-[#675f55]">
+                                                                            {
+                                                                                highlightLabels[
+                                                                                    highlight
+                                                                                        .color
+                                                                                ]
+                                                                            }
+                                                                        </span>
+                                                                    )}
                                                                 </div>
                                                                 {highlight.createdAt && (
                                                                     <span className="hidden shrink-0 font-serif text-xs text-[#928a7e] sm:block">
@@ -739,21 +779,31 @@ export default function Dashboard({
                                 <Panel id="preferences" className="p-6">
                                     <SectionHeading>Preferences</SectionHeading>
                                     <div className="mt-4 grid sm:grid-cols-2">
-                                        <Link
-                                            href="/read/JHN/1"
-                                            className="flex items-center gap-3 border-b border-[#e1d9ce] py-4 pr-3 sm:border-r"
-                                        >
+                                        <div className="flex items-center gap-3 border-b border-[#e1d9ce] py-4 pr-3 sm:border-r">
                                             <BookOpen className="size-6 stroke-[1.4]" />
-                                            <div className="min-w-0 font-serif">
+                                            <div className="min-w-0 flex-1 font-serif">
                                                 <p className="text-sm">
                                                     Default translation
                                                 </p>
-                                                <p className="truncate text-xs text-[#817a70]">
-                                                    Open English Bible (OEB)
-                                                </p>
+                                                <CustomSelect
+                                                    label="Default translation"
+                                                    value={defaultEditionSlug}
+                                                    options={availableEditions.map((available) => ({
+                                                        value: available.slug,
+                                                        label: `${available.name} (${available.abbreviation})`,
+                                                    }))}
+                                                    onChange={(translation) =>
+                                                        router.patch(
+                                                            '/settings/default-translation',
+                                                            { translation },
+                                                            { preserveScroll: true },
+                                                        )
+                                                    }
+                                                    className="mt-1"
+                                                    triggerClassName="!border-0 !bg-transparent !p-0 !text-xs !text-[#817a70] !shadow-none focus-visible:!ring-0"
+                                                />
                                             </div>
-                                            <ChevronRight className="ml-auto size-4" />
-                                        </Link>
+                                        </div>
                                         <a
                                             href="#saved-items"
                                             className="flex items-center gap-3 border-b border-[#e1d9ce] py-4 sm:pl-4"
@@ -800,6 +850,85 @@ export default function Dashboard({
                                             <ChevronRight className="ml-auto size-4" />
                                         </Link>
                                     </div>
+                                    <form
+                                        className="mt-2 border-t border-[#e1d9ce] pt-5"
+                                        onSubmit={(event) => {
+                                            event.preventDefault();
+                                            saveHighlightLabels();
+                                        }}
+                                    >
+                                        <div className="flex flex-wrap items-start justify-between gap-3">
+                                            <div>
+                                                <h3 className="font-serif text-base font-semibold">
+                                                    Highlight labels
+                                                </h3>
+                                                <p className="mt-1 max-w-md font-serif text-xs leading-5 text-[#817a70]">
+                                                    Give each colour a personal meaning. These labels appear when choosing and reviewing highlights.
+                                                </p>
+                                            </div>
+                                            <button
+                                                type="submit"
+                                                disabled={highlightLabelsSaving}
+                                                className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-[#3f6b50] px-4 py-2 font-serif text-sm font-semibold text-white transition hover:bg-[#345a43] focus-visible:ring-2 focus-visible:ring-[#3f6b50] focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-wait disabled:opacity-60"
+                                            >
+                                                <Save className="size-4" />
+                                                {highlightLabelsSaving
+                                                    ? 'Saving…'
+                                                    : 'Save labels'}
+                                            </button>
+                                        </div>
+                                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                                            {(
+                                                [
+                                                    ['yellow', 'Gold'],
+                                                    ['green', 'Green'],
+                                                    ['blue', 'Blue'],
+                                                    ['rose', 'Red'],
+                                                ] as const
+                                            ).map(([colour, fallback]) => (
+                                                <label
+                                                    key={colour}
+                                                    className="flex items-center gap-3 rounded-xl border border-[#e1d9ce] bg-[#fffaf2]/55 px-3 py-2.5"
+                                                >
+                                                    <span
+                                                        aria-hidden="true"
+                                                        className="size-7 shrink-0 rounded-lg"
+                                                        style={{
+                                                            backgroundColor:
+                                                                highlightColours[
+                                                                    colour
+                                                                ],
+                                                        }}
+                                                    />
+                                                    <span className="sr-only">
+                                                        Label for {fallback}{' '}
+                                                        highlights
+                                                    </span>
+                                                    <input
+                                                        value={
+                                                            editableHighlightLabels[
+                                                                colour
+                                                            ]
+                                                        }
+                                                        onChange={(event) =>
+                                                            setEditableHighlightLabels(
+                                                                (current) => ({
+                                                                    ...current,
+                                                                    [colour]:
+                                                                        event
+                                                                            .target
+                                                                            .value,
+                                                                }),
+                                                            )
+                                                        }
+                                                        maxLength={48}
+                                                        placeholder={`${fallback} label`}
+                                                        className="min-w-0 flex-1 bg-transparent font-serif text-sm outline-none placeholder:text-[#9a9287] focus-visible:border-b focus-visible:border-[#3f6b50]"
+                                                    />
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </form>
                                 </Panel>
 
                                 <Panel>

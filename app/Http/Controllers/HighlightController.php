@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\BibleBook;
 use App\Models\Highlight;
+use App\Support\HighlightLabels;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -15,13 +16,45 @@ class HighlightController extends Controller
 {
     public function index(Request $request): Response
     {
-        $highlights = $request->user()->highlights()
-            ->with(['book.edition', 'segments'])
-            ->latest()
-            ->get()
-            ->map(fn (Highlight $highlight) => $this->serialize($highlight));
+        $colours = ['yellow', 'green', 'blue', 'rose'];
+        $requestedColour = $request->string('colour')->toString();
+        $activeColour = in_array($requestedColour, $colours, true)
+            ? $requestedColour
+            : null;
 
-        return Inertia::render('highlights', ['highlights' => $highlights]);
+        $baseQuery = $request->user()->highlights();
+        $colourCounts = array_fill_keys($colours, 0);
+        foreach ((clone $baseQuery)
+            ->selectRaw('color, count(*) as aggregate')
+            ->groupBy('color')
+            ->pluck('aggregate', 'color') as $colour => $count) {
+            if (array_key_exists($colour, $colourCounts)) {
+                $colourCounts[$colour] = (int) $count;
+            }
+        }
+
+        $highlights = $baseQuery
+            ->with(['book.edition', 'segments'])
+            ->when($activeColour, fn ($query) => $query->where('color', $activeColour))
+            ->latest()
+            ->paginate(8)
+            ->withQueryString()
+            ->through(fn (Highlight $highlight) => $this->serialize($highlight));
+
+        return Inertia::render('highlights', [
+            'highlights' => [
+                'data' => $highlights->items(),
+                'currentPage' => $highlights->currentPage(),
+                'lastPage' => $highlights->lastPage(),
+                'perPage' => $highlights->perPage(),
+                'total' => $highlights->total(),
+                'from' => $highlights->firstItem(),
+                'to' => $highlights->lastItem(),
+            ],
+            'highlightLabels' => HighlightLabels::forUser($request->user()),
+            'colourCounts' => $colourCounts,
+            'activeColour' => $activeColour,
+        ]);
     }
 
     public function store(Request $request): RedirectResponse

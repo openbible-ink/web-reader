@@ -3,9 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\BibleBook;
+use App\Models\BibleEdition;
 use App\Models\Bookmark;
 use App\Models\Highlight;
 use App\Models\Note;
+use App\Support\HighlightLabels;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Inertia\Inertia;
@@ -49,6 +51,18 @@ class DashboardController extends Controller
             'noteCount' => $noteCount,
             'savedTab' => $savedTab,
             'savedItems' => $this->paginationPayload($savedItems),
+            'availableEditions' => BibleEdition::query()
+                ->whereHas('books')
+                ->orderBy('name')
+                ->get(['slug', 'name', 'abbreviation'])
+                ->map(fn (BibleEdition $edition) => [
+                    'slug' => $edition->slug,
+                    'name' => $edition->name,
+                    'abbreviation' => $edition->abbreviation,
+                ]),
+            'defaultEditionSlug' => $request->user()->preferredEdition?->slug
+                ?? BibleEdition::query()->where('slug', 'oeb')->value('slug'),
+            'highlightLabels' => HighlightLabels::forUser($request->user()),
         ]);
     }
 

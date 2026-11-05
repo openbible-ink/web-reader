@@ -16,11 +16,17 @@ class BibleEditionResolver
             $book = $this->bookInEdition($bookCode, slug: $requestedEdition);
             abort_unless($book !== null, 404);
 
-            if ($request->user() && $request->user()->preferred_edition_id !== $book->edition_id) {
-                $request->user()->update(['preferred_edition_id' => $book->edition_id]);
-            }
+            $request->session()->put('reader_edition_slug', $book->edition->slug);
 
             return $book;
+        }
+
+        $readerEdition = $request->session()->get('reader_edition_slug');
+        if (is_string($readerEdition) && $readerEdition !== '') {
+            $readerBook = $this->bookInEdition($bookCode, slug: $readerEdition);
+            if ($readerBook) {
+                return $readerBook;
+            }
         }
 
         $preferredEditionId = $request->user()?->preferred_edition_id;

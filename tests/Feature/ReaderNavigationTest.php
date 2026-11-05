@@ -76,6 +76,60 @@ class ReaderNavigationTest extends TestCase
         $this->get(route('reader.show', ['book' => 'JHN', 'chapter' => '22']))->assertNotFound();
     }
 
+    public function test_reader_translation_is_a_session_override_and_does_not_change_the_default(): void
+    {
+        $oeb = BibleEdition::query()->create([
+            'slug' => 'oeb', 'name' => 'Open English Bible', 'abbreviation' => 'OEB',
+            'language' => 'en', 'source_format' => 'usfm',
+        ]);
+        $web = BibleEdition::query()->create([
+            'slug' => 'webp', 'name' => 'World English Bible', 'abbreviation' => 'WEB',
+            'language' => 'en-US', 'source_format' => 'usfm',
+        ]);
+        foreach ([$oeb, $web] as $edition) {
+            $edition->books()->create([
+                'book_code' => 'JHN', 'name' => 'John',
+                'source_path' => "/{$edition->slug}-john.usfm", 'chapter_count' => 21,
+            ]);
+        }
+        $user = User::factory()->create(['preferred_edition_id' => $oeb->id]);
+
+        $this->actingAs($user)
+            ->get(route('reader.show', ['book' => 'JHN', 'chapter' => '1', 'translation' => 'webp']))
+            ->assertOk()
+            ->assertSessionHas('reader_edition_slug', 'webp')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('edition.slug', 'webp')
+                ->where('defaultEditionSlug', 'oeb'));
+
+        $this->assertSame($oeb->id, $user->refresh()->preferred_edition_id);
+
+        $this->get(route('reader.show', ['book' => 'JHN', 'chapter' => '2']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('edition.slug', 'webp'));
+    }
+
+    public function test_user_can_explicitly_change_their_default_translation(): void
+    {
+        $oeb = BibleEdition::query()->create([
+            'slug' => 'oeb', 'name' => 'Open English Bible', 'abbreviation' => 'OEB',
+            'language' => 'en', 'source_format' => 'usfm',
+        ]);
+        $web = BibleEdition::query()->create([
+            'slug' => 'webp', 'name' => 'World English Bible', 'abbreviation' => 'WEB',
+            'language' => 'en-US', 'source_format' => 'usfm',
+        ]);
+        $user = User::factory()->create(['preferred_edition_id' => $oeb->id]);
+
+        $this->actingAs($user)
+            ->from('/dashboard')
+            ->patch(route('translation.update'), ['translation' => 'webp'])
+            ->assertRedirect('/dashboard')
+            ->assertSessionHas('reader_edition_slug', 'webp');
+
+        $this->assertSame($web->id, $user->refresh()->preferred_edition_id);
+    }
+
     public function test_reader_receives_the_edition_book_catalogue_in_canon_order(): void
     {
         $edition = BibleEdition::query()->create([

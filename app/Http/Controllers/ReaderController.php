@@ -9,6 +9,7 @@ use App\Models\Highlight;
 use App\Models\Note;
 use App\Models\ScriptureArtworkPassage;
 use App\Services\BibleEditionResolver;
+use App\Support\HighlightLabels;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -76,8 +77,14 @@ class ReaderController extends Controller
                 'slug' => $availableEdition->slug,
                 'name' => $availableEdition->name,
                 'abbreviation' => $availableEdition->abbreviation,
+                'language' => $availableEdition->language,
+                'licence' => $availableEdition->licence,
+                'attribution' => $availableEdition->attribution,
                 'bookCode' => $availableEdition->books->firstOrFail()->book_code,
             ]);
+
+        $defaultEdition = $request->user()?->preferredEdition
+            ?? BibleEdition::query()->where('slug', 'oeb')->first();
 
         $libraryBooks = $edition->books()
             ->orderBy('canon_position')
@@ -169,6 +176,7 @@ class ReaderController extends Controller
                     ])
                     ->values()
                 : [],
+            'highlightLabels' => HighlightLabels::forUser($request->user()),
             'focusedNoteId' => $focusedNoteId,
             'focusedNoteExpanded' => $focusedNoteExpanded,
             'notes' => $request->user()
@@ -207,6 +215,7 @@ class ReaderController extends Controller
                     ->values()
                 : [],
             'availableEditions' => $availableEditions,
+            'defaultEditionSlug' => $defaultEdition?->slug ?? $edition->slug,
             'libraryBooks' => $libraryBooks,
             'artworks' => $placements->map(fn (ScriptureArtworkPassage $placement) => [
                 'id' => $placement->artwork->id,
