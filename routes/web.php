@@ -6,6 +6,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HighlightController;
 use App\Http\Controllers\NoteController;
 use App\Http\Controllers\ReaderController;
+use App\Http\Controllers\SitemapController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -19,6 +20,7 @@ Route::get('/books/john', fn () => redirect()->route('books.show', [
 ]))->name('books.john');
 Route::get('/read/{book}/{chapter}', ReaderController::class)->name('reader.show');
 Route::get('/books/{book}', BookOverviewController::class)->name('books.show');
+Route::get('/sitemap.xml', SitemapController::class)->name('sitemap');
 Route::get('/read/{edition}/{book}/{chapter}', fn (Request $request, string $edition, string $book, string $chapter) => redirect()->route(
     'reader.show',
     ['book' => $book, 'chapter' => $chapter, ...$request->query()],

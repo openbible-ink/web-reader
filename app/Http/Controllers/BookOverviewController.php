@@ -26,6 +26,7 @@ class BookOverviewController extends Controller
                 'longName' => $book->long_name,
                 'chapterCount' => $book->chapter_count,
             ],
+            'canonicalUrl' => route('books.show', ['book' => $book->book_code]),
         ]);
     }
 }

@@ -120,6 +120,10 @@ class ReaderController extends Controller
                 'chapterCount' => $book->chapter_count,
             ],
             'chapter' => $chapter,
+            'canonicalUrl' => route('reader.show', [
+                'book' => $book->book_code,
+                'chapter' => $chapter,
+            ]),
             'focusedSectionKey' => $request->filled('section')
                 ? $request->string('section')->limit(255)->toString()
                 : null,

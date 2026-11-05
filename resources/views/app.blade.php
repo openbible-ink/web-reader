@@ -33,6 +33,9 @@
         <meta name="theme-color" content="#f4efe5" media="(prefers-color-scheme: light)">
         <meta name="theme-color" content="#211f1b" media="(prefers-color-scheme: dark)">
         <meta name="apple-mobile-web-app-title" content="Open Bible">
+        @unless (in_array($page['component'], ['reader', 'book-overview'], true))
+            <meta name="robots" content="noindex,nofollow">
+        @endunless
 
         <link rel="icon" href="/favicon.ico" sizes="any">
         <link rel="icon" href="/favicon-16x16.png" type="image/png" sizes="16x16">

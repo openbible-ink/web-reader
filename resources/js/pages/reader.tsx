@@ -81,6 +81,7 @@ function FilledHighlighter({ className = '' }: { className?: string }) {
 }
 
 interface ReaderProps {
+    canonicalUrl: string;
     edition: {
         slug: string;
         name: string;
@@ -954,6 +955,7 @@ function Library({
 }
 
 export default function Reader({
+    canonicalUrl,
     edition,
     book,
     chapter,
@@ -2275,10 +2277,20 @@ export default function Reader({
         const end = Number.parseInt(noteEndVerse ?? noteStartVerse, 10);
         return value >= start && value <= end;
     });
+    const pageTitle = `${book.name} ${chapter} — ${edition.name}`;
+    const pageDescription = `Read ${book.name} chapter ${chapter} online in the ${edition.name} (${edition.abbreviation}).`;
 
     return (
         <>
-            <Head title={`${book.name} ${chapter} — ${edition.name}`} />
+            <Head title={pageTitle}>
+                <meta head-key="robots" name="robots" content="index,follow" />
+                <meta head-key="description" name="description" content={pageDescription} />
+                <link head-key="canonical" rel="canonical" href={canonicalUrl} />
+                <meta head-key="og:type" property="og:type" content="article" />
+                <meta head-key="og:title" property="og:title" content={pageTitle} />
+                <meta head-key="og:description" property="og:description" content={pageDescription} />
+                <meta head-key="og:url" property="og:url" content={canonicalUrl} />
+            </Head>
             <div className="min-h-screen bg-[#eee9df] text-[#25221e] lg:pl-[15rem]">
                 <aside className="fixed inset-y-0 left-0 z-40 hidden w-[15rem] border-r border-stone-200 lg:block">
                     <Library activeBookCode={book.code} books={libraryBooks} />
@@ -2540,7 +2552,7 @@ export default function Reader({
                                 <div ref={translationRef} className="relative">
                                     <button
                                         type="button"
-                                        aria-label={`Translation: ${edition.name}`}
+                                        aria-label={`Translation ${edition.abbreviation}: ${edition.name}`}
                                         aria-haspopup="dialog"
                                         aria-expanded={translationOpen}
                                         onClick={() => {

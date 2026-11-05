@@ -21,3 +21,23 @@ test('reads scripture and navigates between chapters', async ({ page }) => {
         page.getByText('Two days after this there was a wedding'),
     ).toBeVisible();
 });
+
+test('switches translation for the passage without changing its canonical route', async ({
+    page,
+}) => {
+    await page.goto('/read/JHN/1');
+
+    await page
+        .getByRole('button', { name: /Translation OEB:/ })
+        .click();
+    await page.getByRole('button', { name: /World English Bible/i }).click();
+
+    await expect(page).toHaveURL(/\/read\/JHN\/1\?translation=webp/);
+    await expect(
+        page.getByRole('button', { name: /Translation WEB:/ }),
+    ).toBeVisible();
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+        'href',
+        /\/read\/JHN\/1$/,
+    );
+});

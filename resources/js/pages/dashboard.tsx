@@ -355,7 +355,7 @@ export default function Dashboard({
                             <Link
                                 href={editProfile()}
                                 className="flex items-center gap-2 rounded-full p-2 focus-visible:ring-2 focus-visible:ring-[#9a672d] focus-visible:outline-none"
-                                aria-label="Account settings"
+                                aria-label={`Account settings for @${user.username}`}
                             >
                                 <span className="hidden max-w-28 truncate font-serif text-sm sm:block">
                                     @{user.username}
@@ -492,7 +492,7 @@ export default function Dashboard({
                                                                         {bookmark.title ||
                                                                             bookmark.reference}
                                                                     </p>
-                                                                    <p className="mt-0.5 truncate text-sm text-[#817a70]">
+                                                                    <p className="mt-0.5 truncate text-sm text-[#6f685f]">
                                                                         {
                                                                             bookmark.reference
                                                                         }{' '}
@@ -503,7 +503,7 @@ export default function Dashboard({
                                                                     </p>
                                                                 </div>
                                                                 {bookmark.createdAt && (
-                                                                    <span className="hidden shrink-0 font-serif text-xs text-[#928a7e] sm:block">
+                                                                    <span className="hidden shrink-0 font-serif text-xs text-[#6f685f] sm:block">
                                                                         {
                                                                             bookmark.createdAt
                                                                         }
@@ -520,7 +520,7 @@ export default function Dashboard({
                                                     <h3 className="mt-3 font-serif text-lg">
                                                         No bookmarks yet
                                                     </h3>
-                                                    <p className="mt-1 max-w-sm font-serif text-sm leading-6 text-[#827b71]">
+                                                    <p className="mt-1 max-w-sm font-serif text-sm leading-6 text-[#6f685f]">
                                                         Save a passage from the
                                                         reader and it will
                                                         appear here.
@@ -566,7 +566,7 @@ export default function Dashboard({
                                                                         }
                                                                         ”
                                                                     </p>
-                                                                    <p className="mt-0.5 truncate text-sm text-[#817a70]">
+                                                                    <p className="mt-0.5 truncate text-sm text-[#6f685f]">
                                                                         {
                                                                             highlight.reference
                                                                         }{' '}
@@ -590,7 +590,7 @@ export default function Dashboard({
                                                                     )}
                                                                 </div>
                                                                 {highlight.createdAt && (
-                                                                    <span className="hidden shrink-0 font-serif text-xs text-[#928a7e] sm:block">
+                                                                    <span className="hidden shrink-0 font-serif text-xs text-[#6f685f] sm:block">
                                                                         {
                                                                             highlight.createdAt
                                                                         }
@@ -607,7 +607,7 @@ export default function Dashboard({
                                                     <h3 className="mt-3 font-serif text-lg">
                                                         No highlights yet
                                                     </h3>
-                                                    <p className="mt-1 max-w-sm font-serif text-sm leading-6 text-[#827b71]">
+                                                    <p className="mt-1 max-w-sm font-serif text-sm leading-6 text-[#6f685f]">
                                                         Select words in the
                                                         reader and choose a
                                                         colour to save a
@@ -638,7 +638,7 @@ export default function Dashboard({
                                                                             note.title
                                                                         }
                                                                     </p>
-                                                                    <p className="mt-0.5 truncate text-sm text-[#817a70]">
+                                                                    <p className="mt-0.5 truncate text-sm text-[#6f685f]">
                                                                         {
                                                                             note.reference
                                                                         }{' '}
@@ -649,7 +649,7 @@ export default function Dashboard({
                                                                     </p>
                                                                 </div>
                                                                 {note.updatedAt && (
-                                                                    <span className="hidden shrink-0 font-serif text-xs text-[#928a7e] sm:block">
+                                                                    <span className="hidden shrink-0 font-serif text-xs text-[#6f685f] sm:block">
                                                                         {
                                                                             note.updatedAt
                                                                         }
@@ -678,7 +678,7 @@ export default function Dashboard({
                                                     <h3 className="mt-3 font-serif text-lg">
                                                         No notes yet
                                                     </h3>
-                                                    <p className="mt-1 max-w-sm font-serif text-sm leading-6 text-[#827b71]">
+                                                    <p className="mt-1 max-w-sm font-serif text-sm leading-6 text-[#6f685f]">
                                                         Add a note beside a
                                                         verse or section, or
                                                         attach one to selected
@@ -748,7 +748,7 @@ export default function Dashboard({
                                 <Panel className="p-6">
                                     <SectionHeading
                                         action={
-                                            <span className="font-serif text-sm text-[#928a7e]">
+                                            <span className="font-serif text-sm text-[#6f685f]">
                                                 No history yet
                                             </span>
                                         }
@@ -768,7 +768,7 @@ export default function Dashboard({
                                             <p className="text-base">
                                                 Begin with John
                                             </p>
-                                            <p className="mt-1 truncate text-sm text-[#817a70]">
+                                            <p className="mt-1 truncate text-sm text-[#6f685f]">
                                                 The Word becomes flesh
                                             </p>
                                         </div>
@@ -800,7 +800,7 @@ export default function Dashboard({
                                                         )
                                                     }
                                                     className="mt-1"
-                                                    triggerClassName="!border-0 !bg-transparent !p-0 !text-xs !text-[#817a70] !shadow-none focus-visible:!ring-0"
+                                                    triggerClassName="!border-0 !bg-transparent !p-0 !text-xs !text-[#6f685f] !shadow-none focus-visible:!ring-0"
                                                 />
                                             </div>
                                         </div>
@@ -815,7 +815,7 @@ export default function Dashboard({
                                                 <p className="text-sm">
                                                     Text size
                                                 </p>
-                                                <p className="text-xs text-[#817a70]">
+                                                <p className="text-xs text-[#6f685f]">
                                                     Medium
                                                 </p>
                                             </div>
@@ -828,7 +828,7 @@ export default function Dashboard({
                                             <Settings2 className="size-6 stroke-[1.4]" />
                                             <div className="font-serif">
                                                 <p className="text-sm">Theme</p>
-                                                <p className="text-xs text-[#817a70] first-letter:uppercase">
+                                                <p className="text-xs text-[#6f685f] first-letter:uppercase">
                                                     {appearance}
                                                 </p>
                                             </div>
@@ -843,7 +843,7 @@ export default function Dashboard({
                                                 <p className="text-sm">
                                                     Language
                                                 </p>
-                                                <p className="text-xs text-[#817a70]">
+                                                <p className="text-xs text-[#6f685f]">
                                                     English (UK)
                                                 </p>
                                             </div>
@@ -862,7 +862,7 @@ export default function Dashboard({
                                                 <h3 className="font-serif text-base font-semibold">
                                                     Highlight labels
                                                 </h3>
-                                                <p className="mt-1 max-w-md font-serif text-xs leading-5 text-[#817a70]">
+                                                <p className="mt-1 max-w-md font-serif text-xs leading-5 text-[#6f685f]">
                                                     Give each colour a personal meaning. These labels appear when choosing and reviewing highlights.
                                                 </p>
                                             </div>
