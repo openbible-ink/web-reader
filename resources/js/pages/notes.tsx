@@ -1,6 +1,5 @@
 import { Head, Link, router } from '@inertiajs/react';
 import {
-    ArrowLeft,
     BookOpen,
     FileText,
     Pencil,
@@ -12,6 +11,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import CustomSelect from '@/components/custom-select';
 import NoteEditor from '@/components/note-editor';
+import SavedItemsPageShell from '@/components/saved-items-page-shell';
 import { loadScriptureSource } from '@/lib/scripture-source-cache';
 import type { BibleDocument, FlowNode } from 'usfm-parser';
 import { parseUsfm } from 'usfm-parser';
@@ -486,37 +486,8 @@ export default function Notes({
     return (
         <>
             <Head title="Notes" />
-            <div className="min-h-svh bg-[#f1ece3] text-[#211f1b]">
-                <header className="border-b border-[#ddd4c7] bg-[#faf7f0]">
-                    <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-5 sm:px-8">
-                        <Link
-                            href="/dashboard"
-                            className="flex items-center gap-3 rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#a95624]"
-                        >
-                            <img
-                                src="/images/brand/open-bible-mark-dark-128.png"
-                                alt=""
-                                className="size-9 object-contain"
-                            />
-                            <span className="font-serif text-lg font-semibold">
-                                Open Bible
-                            </span>
-                        </Link>
-                        <Link
-                            href="/read/JHN/1"
-                            className="flex items-center gap-2 rounded-full border border-[#d9d0c4] bg-white/55 px-4 py-2 font-serif text-sm hover:bg-white"
-                        >
-                            <BookOpen className="size-4" /> Reader
-                        </Link>
-                    </div>
-                </header>
+            <SavedItemsPageShell active="notes">
                 <main className="mx-auto max-w-5xl px-5 py-10 sm:px-8 sm:py-14">
-                    <Link
-                        href="/dashboard"
-                        className="mb-7 inline-flex items-center gap-2 font-serif text-sm text-[#71695e] hover:text-black"
-                    >
-                        <ArrowLeft className="size-4" /> Dashboard
-                    </Link>
                     <div className="flex items-start justify-between gap-5">
                         <div>
                             <h1 className="font-serif text-5xl font-black tracking-[-0.045em] sm:text-6xl">
@@ -651,7 +622,7 @@ export default function Notes({
                     open={createOpen}
                     onClose={() => setCreateOpen(false)}
                 />
-            </div>
+            </SavedItemsPageShell>
         </>
     );
 }

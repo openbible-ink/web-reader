@@ -17,6 +17,87 @@ html[data-chapter-transition-fallback='true'][data-chapter-transition-position='
     opacity: 0;
 }
 
+html[data-translation-swap='true'] {
+    view-transition-name: none;
+}
+
+html[data-translation-swap='true']::view-transition-group(comparison-tabs),
+html[data-translation-swap='true']::view-transition-group(comparison-labels),
+html[data-translation-swap='true']::view-transition-group(
+        comparison-mobile-labels
+    ),
+html[data-translation-swap='true']::view-transition-group(comparison-content) {
+    animation-duration: 310ms;
+    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+html[data-translation-swap='true']::view-transition-old(comparison-labels),
+html[data-translation-swap='true']::view-transition-old(comparison-content) {
+    animation: comparison-swap-out 120ms ease-in both;
+}
+
+html[data-translation-swap='true']::view-transition-new(comparison-labels),
+html[data-translation-swap='true']::view-transition-new(comparison-content) {
+    animation: comparison-swap-in 200ms 110ms cubic-bezier(0.22, 1, 0.36, 1)
+        both;
+}
+
+html[data-translation-swap='true']::view-transition-old(comparison-tabs) {
+    animation: comparison-fade-out 100ms ease-in both;
+}
+
+html[data-translation-swap='true']::view-transition-old(
+        comparison-mobile-labels
+    ) {
+    animation: comparison-fade-out 100ms ease-in both;
+}
+
+html[data-translation-swap='true']::view-transition-new(comparison-tabs),
+html[data-translation-swap='true']::view-transition-new(
+        comparison-mobile-labels
+    ) {
+    animation: comparison-fade-in 180ms 90ms ease-out both;
+}
+
+@keyframes comparison-swap-out {
+    to {
+        opacity: 0;
+        transform: translateX(-0.5rem);
+    }
+}
+
+@keyframes comparison-swap-in {
+    from {
+        opacity: 0;
+        transform: translateX(0.5rem);
+    }
+}
+
+@keyframes comparison-fade-out {
+    to {
+        opacity: 0;
+    }
+}
+
+@keyframes comparison-fade-in {
+    from {
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html[data-translation-swap='true']::view-transition-group(comparison-tabs),
+    html[data-translation-swap='true']::view-transition-group(comparison-labels),
+    html[data-translation-swap='true']::view-transition-group(
+            comparison-mobile-labels
+        ),
+    html[data-translation-swap='true']::view-transition-group(
+            comparison-content
+        ) {
+        animation-duration: 0.01ms;
+    }
+}
+
 @theme {
     --font-sans:
         'Instrument Sans', ui-sans-serif, system-ui, sans-serif,

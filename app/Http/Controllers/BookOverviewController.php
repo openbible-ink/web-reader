@@ -25,8 +25,40 @@ class BookOverviewController extends Controller
                 'name' => $book->name,
                 'longName' => $book->long_name,
                 'chapterCount' => $book->chapter_count,
+                'verseCounts' => $this->verseCounts($book->source_path, $book->chapter_count),
             ],
             'canonicalUrl' => route('books.show', ['book' => $book->book_code]),
         ]);
+    }
+
+    /** @return array<int, int> */
+    private function verseCounts(string $sourcePath, int $chapterCount): array
+    {
+        $counts = array_fill(1, $chapterCount, 0);
+        $source = @file_get_contents(public_path(ltrim($sourcePath, '/')));
+
+        if ($source === false) {
+            return $counts;
+        }
+
+        $chapter = null;
+        foreach (preg_split('/\R/', $source) ?: [] as $line) {
+            if (preg_match('/^\\\\c\s+(\d+)/', $line, $match) === 1) {
+                $chapter = (int) $match[1];
+
+                continue;
+            }
+
+            if ($chapter === null || preg_match('/^\\\\v\s+([^\s]+)/', $line, $match) !== 1) {
+                continue;
+            }
+
+            preg_match_all('/\d+/', $match[1], $verseNumbers);
+            foreach ($verseNumbers[0] as $verseNumber) {
+                $counts[$chapter] = max($counts[$chapter] ?? 0, (int) $verseNumber);
+            }
+        }
+
+        return $counts;
     }
 }

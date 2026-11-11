@@ -33,6 +33,7 @@ import {
     cachedScriptureSource,
     loadScriptureSource,
 } from '@/lib/scripture-source-cache';
+import { getBookGradient } from '@/lib/book-gradients';
 import type {
     BibleDocument,
     FlowNode,
@@ -80,6 +81,26 @@ function FilledHighlighter({ className = '' }: { className?: string }) {
     );
 }
 
+function SwapTranslationsIcon({ className = '' }: { className?: string }) {
+    return (
+        <svg
+            viewBox="0 0 24 24"
+            className={className}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+        >
+            <polyline points="17 1 21 5 17 9" />
+            <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+            <polyline points="7 23 3 19 7 15" />
+            <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+        </svg>
+    );
+}
+
 interface ReaderProps {
     canonicalUrl: string;
     edition: {
@@ -112,6 +133,20 @@ interface ReaderProps {
         bookCode: string;
     }>;
     defaultEditionSlug: string;
+    comparison?: {
+        edition: {
+            slug: string;
+            name: string;
+            abbreviation: string;
+            language: string;
+            sourceFormat: string;
+            variantProfile?: string | null;
+        };
+        book: {
+            code: string;
+            sourceUrl: string;
+        };
+    } | null;
     libraryBooks: Array<{
         code: string;
         name: string;
@@ -195,21 +230,98 @@ interface FootnotePreview {
 }
 
 type ReadingItem =
-    | { key: string; kind: 'heading'; content: InlineNode[] }
+    | { key: string; kind: 'heading'; style: string; content: InlineNode[] }
     | { key: string; kind: 'verse'; number: string; content: InlineNode[] };
 
 interface OutlineItem {
     key: string;
     slug: string;
+    style: string;
     title: string;
     verseStart?: string;
     verseEnd?: string;
+}
+
+interface ComparisonRow {
+    number: string;
+    primary?: Extract<ReadingItem, { kind: 'verse' }>;
+    secondary?: Extract<ReadingItem, { kind: 'verse' }>;
+    primaryHeadings: Extract<ReadingItem, { kind: 'heading' }>[];
+    secondaryHeadings: Extract<ReadingItem, { kind: 'heading' }>[];
 }
 
 interface TypographyPreferences {
     fontSize: 'small' | 'medium' | 'large';
     lineSpacing: 'compact' | 'comfortable' | 'relaxed';
     theme: 'light' | 'dark' | 'sepia';
+}
+
+const readerSkeletonRows = [
+    ['88%', '64%'],
+    ['96%', '78%'],
+    ['82%', '55%'],
+    ['92%', '70%'],
+    ['76%', '48%'],
+] as const;
+
+function ReaderTextSkeleton({ comparison = false }: { comparison?: boolean }) {
+    const column = (suffix = '') => (
+        <div className="space-y-5" aria-hidden="true">
+            <div className="ml-[1.75rem] h-2 w-40 rounded-full bg-current opacity-[0.09]" />
+            {readerSkeletonRows.map((widths, index) => (
+                <div
+                    key={`${suffix}-${index}`}
+                    className="grid grid-cols-[1.25rem_minmax(0,1fr)_2rem] items-start gap-x-2"
+                >
+                    <span className="mt-1.5 h-2 w-2 justify-self-end rounded-full bg-current opacity-[0.1]" />
+                    <span className="space-y-2.5">
+                        {widths.map((width) => (
+                            <span
+                                key={width}
+                                className="block h-[0.72rem] rounded-full bg-current opacity-[0.085]"
+                                style={{ width }}
+                            />
+                        ))}
+                    </span>
+                    <span className="mt-0.5 size-6 rounded-full bg-current opacity-[0.055]" />
+                </div>
+            ))}
+        </div>
+    );
+
+    return (
+        <div
+            role="status"
+            aria-label={
+                comparison
+                    ? 'Preparing the comparison text'
+                    : 'Preparing the scripture text'
+            }
+            className="motion-safe:animate-pulse"
+        >
+            <span className="sr-only">
+                {comparison
+                    ? 'Preparing the comparison text…'
+                    : 'Preparing the scripture text…'}
+            </span>
+            {comparison ? (
+                <div className="grid gap-10 md:ml-[4.5rem] md:grid-cols-2 md:gap-8">
+                    {column('primary')}
+                    <div className="hidden md:block">
+                        {column('secondary')}
+                    </div>
+                </div>
+            ) : (
+                <div className="relative">
+                    <span
+                        aria-hidden="true"
+                        className="absolute top-5 left-0 h-14 w-10 rounded-xl bg-[var(--reader-accent)] opacity-[0.14]"
+                    />
+                    <div className="ml-[4.5rem]">{column('reader')}</div>
+                </div>
+            )}
+        </div>
+    );
 }
 
 function notePreview(markdown: string): string {
@@ -233,7 +345,9 @@ function NoteMarker({
     const isSection = variant === 'section';
 
     return (
-        <span className={`group/note relative flex justify-end pt-0.5 font-sans ${className}`}>
+        <span
+            className={`group/note relative flex justify-end pt-0.5 font-sans ${className}`}
+        >
             <button
                 type="button"
                 onClick={onClick}
@@ -608,6 +722,23 @@ function isSectionHeading(node: FlowNode): boolean {
     );
 }
 
+function isMajorHeading(
+    heading: Extract<ReadingItem, { kind: 'heading' }>,
+): boolean {
+    return heading.style.startsWith('ms');
+}
+
+function readingHeadingLayoutClass(
+    items: ReadingItem[],
+    index: number,
+    dividerClass: string,
+): string {
+    if (index === 0) return '';
+    if (items[index - 1]?.kind === 'heading') return 'mt-3';
+
+    return `relative mt-12 pt-7 before:pointer-events-none before:absolute before:top-0 before:right-0 before:left-[5rem] before:border-t before:content-[''] ${dividerClass}`;
+}
+
 function chapterContent(document: BibleDocument, chapter: string): FlowNode[] {
     const start = document.children.findIndex(
         (node) => node.type === 'chapterStart' && node.number === chapter,
@@ -668,6 +799,7 @@ function readingItems(nodes: FlowNode[]): ReadingItem[] {
             items.push({
                 key: node.id,
                 kind: 'heading',
+                style: node.style,
                 content: node.children,
             });
             continue;
@@ -698,18 +830,37 @@ function focusedReadingItems(
     );
     const selectedVerses = new Set(verses.slice(startIndex, endIndex + 1));
     const focused: ReadingItem[] = [];
-    let currentHeadings: Extract<ReadingItem, { kind: 'heading' }>[] = [];
+    let currentMajorHeading:
+        | Extract<ReadingItem, { kind: 'heading' }>
+        | undefined;
+    let currentSectionHeading:
+        | Extract<ReadingItem, { kind: 'heading' }>
+        | undefined;
     let includedHeadingKeys = new Set<string>();
 
     items.forEach((item) => {
         if (item.kind === 'heading') {
-            currentHeadings = [item];
+            if (isMajorHeading(item)) {
+                currentMajorHeading = item;
+                currentSectionHeading = undefined;
+            } else {
+                currentSectionHeading = item;
+            }
             includedHeadingKeys = new Set();
             return;
         }
 
         if (!selectedVerses.has(item.number)) return;
 
+        const currentHeadings = [
+            currentMajorHeading,
+            currentSectionHeading,
+        ].filter(
+            (
+                heading,
+            ): heading is Extract<ReadingItem, { kind: 'heading' }> =>
+                heading !== undefined,
+        );
         currentHeadings.forEach((heading) => {
             if (!includedHeadingKeys.has(heading.key)) {
                 focused.push(heading);
@@ -741,7 +892,12 @@ function chapterOutline(items: ReadingItem[]): OutlineItem[] {
 
         const verses: string[] = [];
         for (const following of items.slice(index + 1)) {
-            if (following.kind === 'heading') break;
+            if (
+                following.kind === 'heading' &&
+                (!isMajorHeading(item) || isMajorHeading(following))
+            )
+                break;
+            if (following.kind === 'heading') continue;
             verses.push(following.number);
         }
 
@@ -749,12 +905,55 @@ function chapterOutline(items: ReadingItem[]): OutlineItem[] {
             {
                 key: item.key,
                 slug: occurrence === 1 ? baseSlug : `${baseSlug}-${occurrence}`,
+                style: item.style,
                 title,
                 verseStart: verses.at(0),
                 verseEnd: verses.at(-1),
             },
         ];
     });
+}
+
+function comparisonRows(
+    primaryItems: ReadingItem[],
+    secondaryItems: ReadingItem[],
+): ComparisonRow[] {
+    const collect = (items: ReadingItem[]) => {
+        const verses = new Map<
+            string,
+            {
+                verse: Extract<ReadingItem, { kind: 'verse' }>;
+                headings: Extract<ReadingItem, { kind: 'heading' }>[];
+            }
+        >();
+        let headings: Extract<ReadingItem, { kind: 'heading' }>[] = [];
+
+        items.forEach((item) => {
+            if (item.kind === 'heading') {
+                headings = [...headings, item];
+                return;
+            }
+            verses.set(item.number, { verse: item, headings });
+            headings = [];
+        });
+
+        return verses;
+    };
+
+    const primary = collect(primaryItems);
+    const secondary = collect(secondaryItems);
+    const numbers = [
+        ...primary.keys(),
+        ...[...secondary.keys()].filter((number) => !primary.has(number)),
+    ];
+
+    return numbers.map((number) => ({
+        number,
+        primary: primary.get(number)?.verse,
+        secondary: secondary.get(number)?.verse,
+        primaryHeadings: primary.get(number)?.headings ?? [],
+        secondaryHeadings: secondary.get(number)?.headings ?? [],
+    }));
 }
 
 interface PreferenceSelectProps {
@@ -962,6 +1161,7 @@ export default function Reader({
     focusedSectionKey,
     availableEditions,
     defaultEditionSlug,
+    comparison,
     libraryBooks,
     artworks = [],
     bookmarks = [],
@@ -973,6 +1173,7 @@ export default function Reader({
     focusedNoteExpanded = false,
 }: ReaderProps) {
     const { auth } = usePage().props;
+    const bookGradient = getBookGradient(book.code);
     const [loadedSource, setLoadedSource] = useState<{
         url: string;
         source: string;
@@ -980,6 +1181,19 @@ export default function Reader({
         url: book.sourceUrl,
         source: cachedScriptureSource(book.sourceUrl) ?? '',
     }));
+    const [comparisonSource, setComparisonSource] = useState<{
+        url: string;
+        source: string;
+    }>(() => ({
+        url: comparison?.book.sourceUrl ?? '',
+        source: comparison
+            ? (cachedScriptureSource(comparison.book.sourceUrl) ?? '')
+            : '',
+    }));
+    const [comparisonLoadError, setComparisonLoadError] = useState<string>();
+    const [mobileComparisonSide, setMobileComparisonSide] = useState<
+        'primary' | 'comparison'
+    >('primary');
     const [loadError, setLoadError] = useState<string>();
     const [preferences, setPreferences] = useState<OebVariantOptions>(() =>
         savedPreferences(edition.slug),
@@ -1036,6 +1250,7 @@ export default function Reader({
     const footnoteRef = useRef<HTMLDivElement>(null);
     const heroArtworkRef = useRef<HTMLDivElement>(null);
     const heroTextRef = useRef<HTMLDivElement>(null);
+    const resolvedVerseTargetRef = useRef<string | null>(null);
     const readerMainRef = useRef<HTMLElement>(null);
     const readerArticleRef = useRef<HTMLElement>(null);
     const closeNoteDrawer = useCallback(() => {
@@ -1099,6 +1314,37 @@ export default function Reader({
     }, [book.name, book.sourceUrl]);
 
     useEffect(() => {
+        if (!comparison) {
+            setComparisonLoadError(undefined);
+            return;
+        }
+
+        let active = true;
+        setComparisonLoadError(undefined);
+        loadScriptureSource(comparison.book.sourceUrl)
+            .then((source) => {
+                if (active) {
+                    setComparisonSource({
+                        url: comparison.book.sourceUrl,
+                        source,
+                    });
+                }
+            })
+            .catch((error: unknown) => {
+                if (!active) return;
+                setComparisonLoadError(
+                    error instanceof Error
+                        ? error.message
+                        : `Unable to load ${comparison.edition.name}`,
+                );
+            });
+
+        return () => {
+            active = false;
+        };
+    }, [comparison]);
+
+    useEffect(() => {
         window.localStorage.setItem(
             preferencesKey(edition.slug),
             JSON.stringify(preferences),
@@ -1154,10 +1400,7 @@ export default function Reader({
             ) {
                 setEditionPreferencesOpen(false);
             }
-            if (
-                translationOpen &&
-                !translationRef.current?.contains(target)
-            ) {
+            if (translationOpen && !translationRef.current?.contains(target)) {
                 setTranslationOpen(false);
             }
             if (typographyOpen && !typographyRef.current?.contains(target)) {
@@ -1245,6 +1488,15 @@ export default function Reader({
         const updateSelection = () => {
             const article = readerArticleRef.current;
             if (!article) return;
+            const selection = window.getSelection();
+            const anchorElement =
+                selection?.anchorNode instanceof Element
+                    ? selection.anchorNode
+                    : selection?.anchorNode?.parentElement;
+            if (anchorElement?.closest('[data-comparison-readonly]')) {
+                setPendingHighlight(undefined);
+                return;
+            }
             setPendingHighlight(captureHighlightSelection(article));
         };
 
@@ -1289,6 +1541,46 @@ export default function Reader({
 
         return rememberDocument(cacheKey, parsed);
     }, [book, edition, source, preferences]);
+    const comparisonDocument = useMemo(() => {
+        if (
+            !comparison ||
+            comparisonSource.url !== comparison.book.sourceUrl ||
+            !comparisonSource.source
+        ) {
+            return undefined;
+        }
+
+        const comparisonPreferences = savedPreferences(comparison.edition.slug);
+        const cacheKey = JSON.stringify({
+            sourceUrl: comparison.book.sourceUrl,
+            bookCode: comparison.book.code,
+            edition: comparison.edition.slug,
+            variantProfile: comparison.edition.variantProfile,
+            preferences:
+                comparison.edition.variantProfile === 'oeb'
+                    ? comparisonPreferences
+                    : undefined,
+        });
+        const cached = documentCache.get(cacheKey);
+        if (cached) return rememberDocument(cacheKey, cached);
+
+        const parsed =
+            comparison.edition.variantProfile === 'oeb'
+                ? parseOeb(comparisonSource.source, {
+                      variants: comparisonPreferences,
+                  })
+                : parseUsfm(comparisonSource.source, {
+                      edition: {
+                          id: comparison.edition.slug,
+                          name: comparison.edition.name,
+                          abbreviation: comparison.edition.abbreviation,
+                          language: comparison.edition.language,
+                      },
+                      bookCode: comparison.book.code,
+                  });
+
+        return rememberDocument(cacheKey, parsed);
+    }, [comparison, comparisonSource]);
     const chapters = useMemo(
         () => (document ? chapterNumbers(document) : []),
         [document],
@@ -1305,6 +1597,21 @@ export default function Reader({
                 focusedBookmark?.verseEnd,
             ),
         [focusedBookmark, fullContent],
+    );
+    const comparisonContent = useMemo(
+        () =>
+            comparisonDocument
+                ? focusedReadingItems(
+                      readingItems(chapterContent(comparisonDocument, chapter)),
+                      focusedBookmark?.verseStart,
+                      focusedBookmark?.verseEnd,
+                  )
+                : [],
+        [chapter, comparisonDocument, focusedBookmark],
+    );
+    const alignedComparisonRows = useMemo(
+        () => comparisonRows(content, comparisonContent),
+        [comparisonContent, content],
     );
     const outline = useMemo(() => chapterOutline(content), [content]);
     const targetSection = useMemo(
@@ -1323,6 +1630,24 @@ export default function Reader({
             ),
         [fullContent],
     );
+    useEffect(() => {
+        if (content.length === 0 || !window.location.hash.startsWith('#verse-'))
+            return;
+
+        const targetId = decodeURIComponent(window.location.hash.slice(1));
+        const targetKey = `${book.code}:${chapter}:${targetId}`;
+        if (resolvedVerseTargetRef.current === targetKey) return;
+
+        const frame = window.requestAnimationFrame(() => {
+            const target = window.document.getElementById(targetId);
+            if (!target) return;
+
+            target.scrollIntoView({ behavior: 'auto', block: 'start' });
+            resolvedVerseTargetRef.current = targetKey;
+        });
+
+        return () => window.cancelAnimationFrame(frame);
+    }, [book.code, chapter, content]);
     useEffect(() => {
         const registry = (
             CSS as unknown as {
@@ -1688,6 +2013,52 @@ export default function Reader({
             preserveScroll: true,
         });
     };
+    const startComparison = (slug: string) => {
+        const url = new URL(window.location.href);
+        url.searchParams.set('compare', slug);
+        setTranslationOpen(false);
+        setMobileComparisonSide('primary');
+        router.visit(`${url.pathname}${url.search}`, {
+            preserveScroll: true,
+        });
+    };
+    const closeComparison = () => {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('compare');
+        setMobileComparisonSide('primary');
+        router.visit(`${url.pathname}${url.search}`, {
+            preserveScroll: true,
+        });
+    };
+    const swapTranslations = () => {
+        if (!comparison) return;
+
+        const url = new URL(window.location.href);
+        url.searchParams.set('translation', comparison.edition.slug);
+        url.searchParams.set('compare', edition.slug);
+        setMobileComparisonSide('primary');
+        const navigate = () =>
+            new Promise<void>((resolve) => {
+                router.visit(`${url.pathname}${url.search}`, {
+                    preserveScroll: true,
+                    onFinish: () => resolve(),
+                });
+            });
+        const reducedMotion = window.matchMedia(
+            '(prefers-reduced-motion: reduce)',
+        ).matches;
+
+        if (!reducedMotion && window.document.startViewTransition) {
+            window.document.documentElement.dataset.translationSwap = 'true';
+            const transition = window.document.startViewTransition(navigate);
+            void transition.finished.finally(() => {
+                delete window.document.documentElement.dataset.translationSwap;
+            });
+            return;
+        }
+
+        void navigate();
+    };
     const makeDefaultTranslation = (slug: string) => {
         router.patch(
             '/settings/default-translation',
@@ -1702,6 +2073,16 @@ export default function Reader({
         );
     };
     const changeChapter = (nextChapter: string) => {
+        const nextUrl = new URL(
+            `/read/${book.code}/${nextChapter}`,
+            window.location.origin,
+        );
+        const currentUrl = new URL(window.location.href);
+        for (const parameter of ['translation', 'compare']) {
+            const value = currentUrl.searchParams.get(parameter);
+            if (value) nextUrl.searchParams.set(parameter, value);
+        }
+        const nextPath = `${nextUrl.pathname}${nextUrl.search}`;
         const keepReaderDocked =
             (readerMainRef.current?.getBoundingClientRect().top ?? 2) <= 1;
         const direction =
@@ -1736,7 +2117,7 @@ export default function Reader({
             const navigate = () => {
                 window.document.documentElement.dataset.chapterTransitionFallback =
                     'true';
-                router.visit(`/read/${book.code}/${nextChapter}`, {
+                router.visit(nextPath, {
                     preserveScroll: true,
                 });
             };
@@ -1760,7 +2141,7 @@ export default function Reader({
             window.sessionStorage.removeItem(chapterNavigationPositionKey);
         }
 
-        router.visit(`/read/${book.code}/${nextChapter}`, {
+        router.visit(nextPath, {
             preserveScroll: false,
         });
     };
@@ -1955,14 +2336,20 @@ export default function Reader({
 
     const sectionForVerse = (verse: string) => {
         const number = Number.parseInt(verse, 10);
-        return outline.find((item) => {
+        const containsVerse = (item: OutlineItem) => {
             const start = Number.parseInt(item.verseStart ?? '', 10);
             const end = Number.parseInt(
                 item.verseEnd ?? item.verseStart ?? '',
                 10,
             );
             return Number.isFinite(number) && number >= start && number <= end;
-        });
+        };
+
+        return (
+            outline.find(
+                (item) => !item.style.startsWith('ms') && containsVerse(item),
+            ) ?? outline.find(containsVerse)
+        );
     };
     const notesForVerse = (verse: string) =>
         notes.filter((note) => {
@@ -2239,6 +2626,12 @@ export default function Reader({
             : typography.theme === 'sepia'
               ? 'border-[#d8c8aa]'
               : 'border-stone-200';
+    const readerSectionDivider =
+        typography.theme === 'dark'
+            ? 'before:border-stone-700'
+            : typography.theme === 'sepia'
+              ? 'before:border-[#d8c8aa]'
+              : 'before:border-stone-200';
     const highlightLabel = (colour: HighlightColor): string =>
         highlightLabels[colour]?.trim() ||
         highlightColors.find(({ value }) => value === colour)?.label ||
@@ -2284,12 +2677,32 @@ export default function Reader({
         <>
             <Head title={pageTitle}>
                 <meta head-key="robots" name="robots" content="index,follow" />
-                <meta head-key="description" name="description" content={pageDescription} />
-                <link head-key="canonical" rel="canonical" href={canonicalUrl} />
+                <meta
+                    head-key="description"
+                    name="description"
+                    content={pageDescription}
+                />
+                <link
+                    head-key="canonical"
+                    rel="canonical"
+                    href={canonicalUrl}
+                />
                 <meta head-key="og:type" property="og:type" content="article" />
-                <meta head-key="og:title" property="og:title" content={pageTitle} />
-                <meta head-key="og:description" property="og:description" content={pageDescription} />
-                <meta head-key="og:url" property="og:url" content={canonicalUrl} />
+                <meta
+                    head-key="og:title"
+                    property="og:title"
+                    content={pageTitle}
+                />
+                <meta
+                    head-key="og:description"
+                    property="og:description"
+                    content={pageDescription}
+                />
+                <meta
+                    head-key="og:url"
+                    property="og:url"
+                    content={canonicalUrl}
+                />
             </Head>
             <div className="min-h-screen bg-[#eee9df] text-[#25221e] lg:pl-[15rem]">
                 <aside className="fixed inset-y-0 left-0 z-40 hidden w-[15rem] border-r border-stone-200 lg:block">
@@ -2376,8 +2789,7 @@ export default function Reader({
                                                     updatePreference(
                                                         'gender',
                                                         value as
-                                                            | 'neut'
-                                                            | 'masc',
+                                                            'neut' | 'masc',
                                                     )
                                                 }
                                             />
@@ -2424,8 +2836,7 @@ export default function Reader({
                                                     updatePreference(
                                                         'gehenna',
                                                         value as
-                                                            | 'gehenna'
-                                                            | 'pit',
+                                                            'gehenna' | 'pit',
                                                     )
                                                 }
                                             />
@@ -2449,8 +2860,7 @@ export default function Reader({
                                                     updatePreference(
                                                         'ioudaioi',
                                                         value as
-                                                            | 'ioudaioi'
-                                                            | 'jew',
+                                                            'ioudaioi' | 'jew',
                                                     )
                                                 }
                                             />
@@ -2485,8 +2895,8 @@ export default function Reader({
                             aria-hidden="true"
                             className="absolute inset-0 bg-[#d9c9a9]"
                             style={{
-                                backgroundImage:
-                                    'radial-gradient(circle at 78% 22%, rgba(49, 69, 54, 0.76), transparent 27%), radial-gradient(circle at 67% 78%, rgba(118, 105, 65, 0.54), transparent 34%), linear-gradient(118deg, #f2e5cd 0%, #d8c7a5 48%, #74806a 100%)',
+                                backgroundColor: bookGradient.backgroundColor,
+                                backgroundImage: bookGradient.backgroundImage,
                             }}
                         />
                     )}
@@ -2522,7 +2932,9 @@ export default function Reader({
                         } as CSSProperties
                     }
                 >
-                    <div className="mx-auto max-w-[52rem] px-7 pb-24 sm:px-12 lg:px-14">
+                    <div
+                        className={`mx-auto px-7 pb-24 sm:px-12 lg:px-14 ${comparison ? 'max-w-[86rem]' : 'max-w-[52rem]'}`}
+                    >
                         <div
                             className={`sticky top-0 z-20 -mx-2 flex h-[5.4rem] items-center justify-between border-b px-2 backdrop-blur-[2px] ${readerHeaderSurface}`}
                         >
@@ -2549,79 +2961,203 @@ export default function Reader({
                                     className="font-serif text-lg font-semibold"
                                     triggerClassName="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--reader-accent)] focus-visible:ring-0"
                                 />
-                                <div ref={translationRef} className="relative">
-                                    <button
-                                        type="button"
-                                        aria-label={`Translation ${edition.abbreviation}: ${edition.name}`}
-                                        aria-haspopup="dialog"
-                                        aria-expanded={translationOpen}
-                                        onClick={() => {
-                                            setTranslationOpen((open) => !open);
-                                            setTypographyOpen(false);
-                                            setOutlineOpen(false);
-                                            setEditionPreferencesOpen(false);
-                                            setHighlightOpen(false);
-                                        }}
-                                        className={`flex cursor-pointer items-center gap-1 rounded-full border px-2.5 py-2 text-xs font-semibold tracking-[0.08em] transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--reader-accent)] sm:px-3 ${readerPanelControlState(translationOpen)} ${typography.theme === 'dark' ? 'border-stone-600 text-stone-200 hover:bg-white/12' : 'border-stone-300 text-stone-700 hover:bg-black/6'}`}
+                                <div
+                                    className={
+                                        comparison
+                                            ? `flex items-center gap-0.5 rounded-full p-0.5 ${typography.theme === 'dark' ? 'bg-white/10' : 'bg-[#f3eadf]'}`
+                                            : undefined
+                                    }
+                                    style={
+                                        comparison
+                                            ? {
+                                                  viewTransitionName:
+                                                      'comparison-tabs',
+                                              }
+                                            : undefined
+                                    }
+                                >
+                                    <div
+                                        ref={translationRef}
+                                        className="relative"
                                     >
-                                        {edition.abbreviation}
-                                        <ChevronDown
-                                            className={`size-3.5 transition-transform ${translationOpen ? 'rotate-180' : ''}`}
-                                        />
-                                    </button>
-                                    {translationOpen && (
-                                        <section
-                                            role="dialog"
-                                            aria-label="Choose translation"
-                                            className={`fixed top-[5rem] right-4 left-4 z-50 overflow-hidden rounded-2xl border font-sans shadow-[0_20px_60px_rgba(41,37,36,0.22)] sm:absolute sm:top-12 sm:right-auto sm:left-0 sm:w-[23rem] ${outlineSurface}`}
+                                        <button
+                                            type="button"
+                                            aria-label={`Translation ${edition.abbreviation}: ${edition.name}`}
+                                            aria-haspopup="dialog"
+                                            aria-expanded={translationOpen}
+                                            onClick={() => {
+                                                setTranslationOpen(
+                                                    (open) => !open,
+                                                );
+                                                setTypographyOpen(false);
+                                                setOutlineOpen(false);
+                                                setEditionPreferencesOpen(
+                                                    false,
+                                                );
+                                                setHighlightOpen(false);
+                                            }}
+                                            className={`flex cursor-pointer items-center gap-1 rounded-full border px-2.5 py-2 text-xs font-semibold tracking-[0.08em] transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--reader-accent)] sm:px-3 ${readerPanelControlState(translationOpen)} ${comparison ? (typography.theme === 'dark' ? 'border-transparent bg-stone-800 text-stone-100 shadow-sm hover:bg-stone-700' : 'border-transparent bg-[#fffdf9] text-stone-800 shadow-sm hover:bg-white') : typography.theme === 'dark' ? 'border-stone-600 text-stone-200 hover:bg-white/12' : 'border-stone-300 text-stone-700 hover:bg-black/6'}`}
                                         >
-                                            <div className={`border-b px-5 py-4 ${readerDivider}`}>
-                                                <h2 className="font-serif text-xl font-semibold">
-                                                    Bible translation
-                                                </h2>
-                                                <p className={`mt-1 text-xs ${readerMutedText}`}>
-                                                    Switch this reading session without changing your default.
-                                                </p>
-                                            </div>
-                                            <div className="grid gap-1 p-2">
-                                                {availableEditions.map((available) => {
-                                                    const selected = available.slug === edition.slug;
-                                                    return (
-                                                        <button
-                                                            key={available.slug}
-                                                            type="button"
-                                                            onClick={() => switchTranslation(available.slug)}
-                                                            className={`flex cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-left transition focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--reader-accent)] ${selected ? typography.theme === 'dark' ? 'bg-white/10' : 'bg-[#f4eadc]' : outlineItemHover}`}
-                                                        >
-                                                            <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-current/15 font-serif text-xs font-bold">
-                                                                {available.abbreviation}
-                                                            </span>
-                                                            <span className="min-w-0 flex-1">
-                                                                <span className="block font-serif text-sm font-semibold">
-                                                                    {available.name}
-                                                                </span>
-                                                                <span className={`mt-0.5 block text-[0.68rem] ${readerMutedText}`}>
-                                                                    {available.language}
-                                                                    {available.slug === defaultEditionSlug ? ' · Default' : ''}
-                                                                </span>
-                                                            </span>
-                                                            {selected && <Check className="size-4 shrink-0" />}
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                            {auth.user && edition.slug !== defaultEditionSlug && (
-                                                <div className={`border-t px-4 py-3 ${readerDivider}`}>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => makeDefaultTranslation(edition.slug)}
-                                                        className="w-full cursor-pointer rounded-xl px-3 py-2 text-left text-xs font-semibold text-[var(--reader-accent)] transition hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-[var(--reader-accent)]"
+                                            {edition.abbreviation}
+                                            <ChevronDown
+                                                className={`size-3.5 transition-transform ${translationOpen ? 'rotate-180' : ''}`}
+                                            />
+                                        </button>
+                                        {translationOpen && (
+                                            <section
+                                                role="dialog"
+                                                aria-label="Choose translation"
+                                                className={`fixed top-[5rem] right-4 left-4 z-50 overflow-hidden rounded-2xl border font-sans shadow-[0_20px_60px_rgba(41,37,36,0.22)] sm:absolute sm:top-12 sm:right-auto sm:left-0 sm:w-[23rem] ${outlineSurface}`}
+                                            >
+                                                <div
+                                                    className={`border-b px-5 py-4 ${readerDivider}`}
+                                                >
+                                                    <h2 className="font-serif text-xl font-semibold">
+                                                        Bible translation
+                                                    </h2>
+                                                    <p
+                                                        className={`mt-1 text-xs ${readerMutedText}`}
                                                     >
-                                                        Make {edition.abbreviation} my default translation
-                                                    </button>
+                                                        Switch this reading
+                                                        session without changing
+                                                        your default.
+                                                    </p>
                                                 </div>
-                                            )}
-                                        </section>
+                                                <div className="grid gap-1 p-2">
+                                                    {availableEditions.map(
+                                                        (available) => {
+                                                            const selected =
+                                                                available.slug ===
+                                                                edition.slug;
+                                                            return (
+                                                                <button
+                                                                    key={
+                                                                        available.slug
+                                                                    }
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        switchTranslation(
+                                                                            available.slug,
+                                                                        )
+                                                                    }
+                                                                    className={`flex cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-left transition focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--reader-accent)] ${selected ? (typography.theme === 'dark' ? 'bg-white/10' : 'bg-[#f4eadc]') : outlineItemHover}`}
+                                                                >
+                                                                    <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-current/15 font-serif text-xs font-bold">
+                                                                        {
+                                                                            available.abbreviation
+                                                                        }
+                                                                    </span>
+                                                                    <span className="min-w-0 flex-1">
+                                                                        <span className="block font-serif text-sm font-semibold">
+                                                                            {
+                                                                                available.name
+                                                                            }
+                                                                        </span>
+                                                                        <span
+                                                                            className={`mt-0.5 block text-[0.68rem] ${readerMutedText}`}
+                                                                        >
+                                                                            {
+                                                                                available.language
+                                                                            }
+                                                                            {available.slug ===
+                                                                            defaultEditionSlug
+                                                                                ? ' · Default'
+                                                                                : ''}
+                                                                        </span>
+                                                                    </span>
+                                                                    {selected && (
+                                                                        <Check className="size-4 shrink-0" />
+                                                                    )}
+                                                                </button>
+                                                            );
+                                                        },
+                                                    )}
+                                                </div>
+                                                {!comparison &&
+                                                    availableEditions.some(
+                                                        (available) =>
+                                                            available.slug !==
+                                                            edition.slug,
+                                                    ) && (
+                                                        <div
+                                                            className={`border-t px-4 py-3 ${readerDivider}`}
+                                                        >
+                                                            <p
+                                                                className={`px-2 pb-2 text-[0.65rem] font-semibold tracking-[0.18em] uppercase ${readerMutedText}`}
+                                                            >
+                                                                Compare with
+                                                            </p>
+                                                            <div className="flex flex-wrap gap-2">
+                                                                {availableEditions
+                                                                    .filter(
+                                                                        (
+                                                                            available,
+                                                                        ) =>
+                                                                            available.slug !==
+                                                                            edition.slug,
+                                                                    )
+                                                                    .map(
+                                                                        (
+                                                                            available,
+                                                                        ) => (
+                                                                            <button
+                                                                                key={
+                                                                                    available.slug
+                                                                                }
+                                                                                type="button"
+                                                                                onClick={() =>
+                                                                                    startComparison(
+                                                                                        available.slug,
+                                                                                    )
+                                                                                }
+                                                                                className={`cursor-pointer rounded-full border px-3 py-2 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-[var(--reader-accent)] ${readerBorderedControl}`}
+                                                                            >
+                                                                                {
+                                                                                    available.abbreviation
+                                                                                }
+                                                                            </button>
+                                                                        ),
+                                                                    )}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                {auth.user &&
+                                                    edition.slug !==
+                                                        defaultEditionSlug && (
+                                                        <div
+                                                            className={`border-t px-4 py-3 ${readerDivider}`}
+                                                        >
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    makeDefaultTranslation(
+                                                                        edition.slug,
+                                                                    )
+                                                                }
+                                                                className="w-full cursor-pointer rounded-xl px-3 py-2 text-left text-xs font-semibold text-[var(--reader-accent)] transition hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-[var(--reader-accent)]"
+                                                            >
+                                                                Make{' '}
+                                                                {
+                                                                    edition.abbreviation
+                                                                }{' '}
+                                                                my default
+                                                                translation
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                            </section>
+                                        )}
+                                    </div>
+                                    {comparison && (
+                                        <button
+                                            type="button"
+                                            onClick={closeComparison}
+                                            aria-label={`${comparison.edition.abbreviation}: Close ${comparison.edition.name} comparison`}
+                                            className={`flex cursor-pointer items-center gap-1.5 rounded-full border border-transparent px-2.5 py-2 text-xs font-semibold tracking-[0.08em] transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--reader-accent)] ${typography.theme === 'dark' ? 'text-stone-100 hover:bg-white/10' : 'text-stone-800 hover:bg-white/55'}`}
+                                        >
+                                            {comparison.edition.abbreviation}
+                                            <X className="size-3.5" />
+                                        </button>
                                     )}
                                 </div>
                             </div>
@@ -2827,16 +3363,25 @@ export default function Reader({
                                                                         section,
                                                                     )
                                                                 }
-                                                                className={`grid w-full cursor-pointer grid-cols-[4.5rem_minmax(0,1fr)] items-start gap-3 rounded-xl px-3 py-3 text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--reader-accent)] ${outlineItemHover}`}
+                                                                data-heading-style={
+                                                                    section.style
+                                                                }
+                                                                className={`grid w-full cursor-pointer grid-cols-[4.5rem_minmax(0,1fr)] items-start gap-3 rounded-xl px-3 text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--reader-accent)] ${section.style.startsWith('ms') ? 'mt-1 py-3.5' : 'py-3 pl-5'} ${outlineItemHover}`}
                                                             >
                                                                 <span
                                                                     className={`pt-0.5 text-xs tabular-nums ${readerMutedText}`}
                                                                 >
-                                                                    {verseRange
-                                                                        ? `vv. ${verseRange}`
-                                                                        : '—'}
+                                                                    {section.style.startsWith(
+                                                                        'ms',
+                                                                    )
+                                                                        ? 'DIVISION'
+                                                                        : verseRange
+                                                                          ? `vv. ${verseRange}`
+                                                                          : '—'}
                                                                 </span>
-                                                                <span className="font-serif text-base leading-snug font-semibold">
+                                                                <span
+                                                                    className={`font-serif leading-snug font-semibold ${section.style.startsWith('ms') ? 'text-lg' : 'text-base'}`}
+                                                                >
                                                                     {
                                                                         section.title
                                                                     }
@@ -3012,7 +3557,9 @@ export default function Reader({
                                                                         highlight
                                                                             .color
                                                                     ]?.trim() && (
-                                                                        <span className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[0.65rem] font-semibold ${readerDivider}`}>
+                                                                        <span
+                                                                            className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[0.65rem] font-semibold ${readerDivider}`}
+                                                                        >
                                                                             {highlightLabel(
                                                                                 highlight.color,
                                                                             )}
@@ -3446,6 +3993,99 @@ export default function Reader({
                             </div>
                         )}
 
+                        {comparison && (
+                            <div
+                                className={`sticky top-[5.4rem] z-20 -mx-2 border-b px-2 py-3 font-sans backdrop-blur-[2px] ${readerDivider} ${readerHeaderSurface}`}
+                                aria-label="Compared translations"
+                            >
+                                <div
+                                    className="grid grid-cols-2 gap-2 md:hidden"
+                                    style={{
+                                        viewTransitionName:
+                                            'comparison-mobile-labels',
+                                    }}
+                                >
+                                    {(
+                                        [
+                                            [
+                                                'primary',
+                                                edition.abbreviation,
+                                                edition.name,
+                                            ],
+                                            [
+                                                'comparison',
+                                                comparison.edition.abbreviation,
+                                                comparison.edition.name,
+                                            ],
+                                        ] as const
+                                    ).map(([side, abbreviation, name]) => (
+                                        <button
+                                            key={side}
+                                            type="button"
+                                            onClick={() =>
+                                                setMobileComparisonSide(side)
+                                            }
+                                            aria-pressed={
+                                                mobileComparisonSide === side
+                                            }
+                                            className={`cursor-pointer rounded-xl border px-3 py-2 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-[var(--reader-accent)] ${mobileComparisonSide === side ? 'border-[var(--reader-accent)] bg-[color-mix(in_srgb,var(--reader-accent)_12%,transparent)] text-[var(--reader-accent)]' : readerBorderedControl}`}
+                                        >
+                                            <span className="block">
+                                                {abbreviation}
+                                            </span>
+                                            <span className="sr-only">
+                                                {name}
+                                            </span>
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="hidden grid-cols-[4.5rem_minmax(0,1fr)] items-center md:grid">
+                                    <div className="flex items-center justify-start">
+                                        <button
+                                            type="button"
+                                            onClick={swapTranslations}
+                                            aria-label={`Swap translations: show ${comparison.edition.name} first and ${edition.name} second`}
+                                            title="Swap translations"
+                                            className="flex h-8 w-8 cursor-pointer items-center justify-start text-[var(--reader-accent)] opacity-75 transition hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--reader-accent)]"
+                                        >
+                                            <SwapTranslationsIcon className="size-[1.1rem]" />
+                                        </button>
+                                    </div>
+                                    <div
+                                        className="grid grid-cols-2 items-center gap-x-8"
+                                        style={{
+                                            viewTransitionName:
+                                                'comparison-labels',
+                                        }}
+                                    >
+                                        <div className="flex items-baseline pl-[1.625rem]">
+                                            <span className="font-serif text-lg font-semibold">
+                                                {edition.name}
+                                            </span>
+                                            <span
+                                                className={`ml-2 text-xs ${readerMutedText}`}
+                                            >
+                                                {edition.abbreviation}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-baseline pl-[1.625rem]">
+                                            <span className="font-serif text-lg font-semibold">
+                                                {comparison.edition.name}
+                                            </span>
+                                            <span
+                                                className={`ml-2 text-xs ${readerMutedText}`}
+                                            >
+                                                {
+                                                    comparison.edition
+                                                        .abbreviation
+                                                }
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         <article
                             ref={readerArticleRef}
                             data-reader-chapter-content
@@ -3461,73 +4101,294 @@ export default function Reader({
                                 </p>
                             )}
                             {!document && !loadError && (
-                                <p
-                                    className={`font-sans text-sm ${readerMutedText}`}
-                                >
-                                    Preparing the text…
-                                </p>
+                                <ReaderTextSkeleton />
                             )}
-                            {content.map((item, index) =>
-                                item.kind === 'heading' ? (
-                                    <div
-                                        key={item.key}
-                                        id={`section-${item.key}`}
-                                        className={`group/section grid scroll-mt-[6.5rem] grid-cols-[4.5rem_1.5rem_minmax(0,1fr)_2.75rem] items-center gap-x-2 ${index ? `mt-12 border-t pt-7 ${readerDivider}` : ''} mb-4`}
-                                    >
-                                        <h2
-                                            className={`col-start-3 font-sans text-[0.68rem] font-semibold tracking-[0.29em] uppercase ${readerMutedText}`}
-                                        >
-                                            {renderInlineSequence(
-                                                item.content,
-                                                openFootnote,
-                                            )}
-                                        </h2>
-                                        {notesForSection(item).length > 0 && (
-                                            <NoteMarker
-                                                notes={notesForSection(item)}
-                                                variant="section"
-                                                className="col-start-4"
-                                                onClick={() =>
-                                                    openNotesForSection(item)
-                                                }
-                                            />
+                            {comparison ? (
+                                <div>
+                                    {comparisonLoadError && (
+                                        <p className="mb-5 rounded-xl bg-red-50 p-4 font-sans text-sm text-red-800">
+                                            {comparisonLoadError}
+                                        </p>
+                                    )}
+                                    {document &&
+                                        !comparisonDocument &&
+                                        !comparisonLoadError && (
+                                            <ReaderTextSkeleton comparison />
                                         )}
-                                    </div>
-                                ) : (
-                                    <Fragment key={item.key}>
-                                        {item.number === '1' && (
-                                            <div className="pointer-events-none sticky top-[6.4rem] z-10 h-0 w-[4.5rem]">
+                                    {comparisonDocument && (
+                                        <div className="relative">
+                                            <div className="pointer-events-none sticky top-[9.65rem] z-10 h-0 w-16">
                                                 <span
                                                     className={`-mt-1 block font-serif leading-none text-[var(--reader-accent)] ${chapter.length >= 3 ? 'text-[2.75rem]' : 'text-[3.5rem]'}`}
                                                 >
                                                     {chapter}
                                                 </span>
                                             </div>
-                                        )}
-                                        <div className="group/verse grid grid-cols-[4.5rem_1.5rem_minmax(0,1fr)_2.75rem] items-start gap-x-2 py-1.5">
-                                            <span aria-hidden="true" />
-                                            <span
-                                                className={`pt-1 text-right text-sm tabular-nums ${readerMutedText}`}
+                                            <div
+                                                className="md:ml-[4.5rem]"
+                                                style={{
+                                                    viewTransitionName:
+                                                        'comparison-content',
+                                                }}
                                             >
-                                                {item.number}
-                                            </span>
-                                            <p data-verse-number={item.number}>
-                                                {renderVerseContent(
+                                                {alignedComparisonRows.map(
+                                                    (row, rowIndex) => (
+                                                        <div
+                                                            key={row.number}
+                                                            className="grid gap-0 py-4 md:grid-cols-2 md:gap-8"
+                                                            style={
+                                                                rowIndex > 0
+                                                                    ? {
+                                                                          borderTop:
+                                                                              '1px dashed color-mix(in srgb, var(--reader-accent) 24%, transparent)',
+                                                                      }
+                                                                    : undefined
+                                                            }
+                                                        >
+                                                            <div
+                                                                className={`${mobileComparisonSide === 'primary' ? 'block' : 'hidden'} md:block`}
+                                                            >
+                                                                {row.primaryHeadings.map(
+                                                                    (
+                                                                        heading,
+                                                                    ) => (
+                                                                        <div
+                                                                            key={
+                                                                                heading.key
+                                                                            }
+                                                                            id={`section-${heading.key}`}
+                                                                            className={`group/section ml-[1.625rem] flex items-center gap-3 scroll-mt-[9rem] ${isMajorHeading(heading) ? 'mt-1 mb-2' : 'mb-4'}`}
+                                                                        >
+                                                                            <h2
+                                                                                data-heading-style={
+                                                                                    heading.style
+                                                                                }
+                                                                                className={
+                                                                                    isMajorHeading(
+                                                                                        heading,
+                                                                                    )
+                                                                                        ? 'font-serif text-lg leading-tight font-semibold'
+                                                                                        : `font-sans text-[0.68rem] font-semibold tracking-[0.24em] uppercase ${readerMutedText}`
+                                                                                }
+                                                                            >
+                                                                                {renderInlineSequence(
+                                                                                    heading.content,
+                                                                                    openFootnote,
+                                                                                )}
+                                                                            </h2>
+                                                                            {notesForSection(
+                                                                                heading,
+                                                                            )
+                                                                                .length >
+                                                                                0 && (
+                                                                                <NoteMarker
+                                                                                    notes={notesForSection(
+                                                                                        heading,
+                                                                                    )}
+                                                                                    variant="section"
+                                                                                    onClick={() =>
+                                                                                        openNotesForSection(
+                                                                                            heading,
+                                                                                        )
+                                                                                    }
+                                                                                />
+                                                                            )}
+                                                                        </div>
+                                                                    ),
+                                                                )}
+                                                                <div className="group/verse grid grid-cols-[1.25rem_minmax(0,1fr)_2rem] items-start gap-x-1.5">
+                                                                    <span
+                                                                        className={`pt-1 text-right font-sans text-sm tabular-nums ${readerMutedText}`}
+                                                                    >
+                                                                        {
+                                                                            row.number
+                                                                        }
+                                                                    </span>
+                                                                    <p
+                                                                        data-verse-number={
+                                                                            row.number
+                                                                        }
+                                                                        data-edition={
+                                                                            edition.slug
+                                                                        }
+                                                                    >
+                                                                        {row.primary
+                                                                            ? renderVerseContent(
+                                                                                  row
+                                                                                      .primary
+                                                                                      .content,
+                                                                                  openFootnote,
+                                                                              )
+                                                                            : '—'}
+                                                                    </p>
+                                                                    <NoteMarker
+                                                                        notes={notesForVerse(
+                                                                            row.number,
+                                                                        )}
+                                                                        onClick={() =>
+                                                                            openNotesAt(
+                                                                                row.number,
+                                                                            )
+                                                                        }
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                            <div
+                                                                data-comparison-readonly
+                                                                className={`${mobileComparisonSide === 'comparison' ? 'block' : 'hidden'} md:block`}
+                                                            >
+                                                                {row.secondaryHeadings.map(
+                                                                    (
+                                                                        heading,
+                                                                    ) => (
+                                                                        <h2
+                                                                            key={
+                                                                                heading.key
+                                                                            }
+                                                                            data-heading-style={
+                                                                                heading.style
+                                                                            }
+                                                                            className={`ml-[1.625rem] ${isMajorHeading(heading) ? 'mt-1 mb-2 font-serif text-lg leading-tight font-semibold' : `mb-4 font-sans text-[0.68rem] font-semibold tracking-[0.24em] uppercase ${readerMutedText}`}`}
+                                                                        >
+                                                                            {renderInlineSequence(
+                                                                                heading.content,
+                                                                                openFootnote,
+                                                                            )}
+                                                                        </h2>
+                                                                    ),
+                                                                )}
+                                                                <div className="group/verse grid grid-cols-[1.25rem_minmax(0,1fr)_2rem] items-start gap-x-1.5">
+                                                                    <span
+                                                                        className={`pt-1 text-right font-sans text-sm tabular-nums ${readerMutedText}`}
+                                                                    >
+                                                                        {
+                                                                            row.number
+                                                                        }
+                                                                    </span>
+                                                                    <p
+                                                                        data-verse-number={
+                                                                            row.number
+                                                                        }
+                                                                        data-edition={
+                                                                            comparison
+                                                                                .edition
+                                                                                .slug
+                                                                        }
+                                                                    >
+                                                                        {row.secondary
+                                                                            ? renderVerseContent(
+                                                                                  row
+                                                                                      .secondary
+                                                                                      .content,
+                                                                                  openFootnote,
+                                                                              )
+                                                                            : '—'}
+                                                                    </p>
+                                                                    <NoteMarker
+                                                                        notes={notesForVerse(
+                                                                            row.number,
+                                                                        ).filter(
+                                                                            (
+                                                                                note,
+                                                                            ) =>
+                                                                                note.anchorType !==
+                                                                                'selection',
+                                                                        )}
+                                                                        onClick={() =>
+                                                                            openNotesAt(
+                                                                                row.number,
+                                                                            )
+                                                                        }
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ),
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                content.map((item, index) =>
+                                    item.kind === 'heading' ? (
+                                        <div
+                                            key={item.key}
+                                            id={`section-${item.key}`}
+                                            data-heading-style={item.style}
+                                            className={`group/section grid scroll-mt-[6.5rem] grid-cols-[4.5rem_1.5rem_minmax(0,1fr)_2.75rem] items-center gap-x-2 ${readingHeadingLayoutClass(content, index, readerSectionDivider)} ${isMajorHeading(item) ? 'mb-2' : 'mb-4'}`}
+                                        >
+                                            <h2
+                                                className={
+                                                    isMajorHeading(item)
+                                                        ? 'col-start-3 font-serif text-2xl leading-tight font-semibold tracking-[-0.025em]'
+                                                        : `col-start-3 font-sans text-[0.68rem] font-semibold tracking-[0.29em] uppercase ${readerMutedText}`
+                                                }
+                                            >
+                                                {renderInlineSequence(
                                                     item.content,
                                                     openFootnote,
                                                 )}
-                                            </p>
-                                            <NoteMarker
-                                                notes={notesForVerse(
-                                                    item.number,
-                                                )}
-                                                onClick={() =>
-                                                    openNotesAt(item.number)
-                                                }
-                                            />
+                                            </h2>
+                                            {notesForSection(item).length >
+                                                0 && (
+                                                <NoteMarker
+                                                    notes={notesForSection(
+                                                        item,
+                                                    )}
+                                                    variant="section"
+                                                    className="col-start-4"
+                                                    onClick={() =>
+                                                        openNotesForSection(
+                                                            item,
+                                                        )
+                                                    }
+                                                />
+                                            )}
                                         </div>
-                                    </Fragment>
-                                ),
+                                    ) : (
+                                        <Fragment key={item.key}>
+                                            {item.number === '1' && (
+                                                <div className="pointer-events-none sticky top-[6.4rem] z-10 h-0 w-[4.5rem]">
+                                                    <span
+                                                        className={`-mt-1 block font-serif leading-none text-[var(--reader-accent)] ${chapter.length >= 3 ? 'text-[2.75rem]' : 'text-[3.5rem]'}`}
+                                                    >
+                                                        {chapter}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            <div
+                                                id={`verse-${item.number}`}
+                                                className="group/verse grid scroll-mt-[6.5rem] grid-cols-[4.5rem_1.5rem_minmax(0,1fr)_2.75rem] items-start gap-x-2 py-1.5"
+                                            >
+                                                <span aria-hidden="true" />
+                                                <span
+                                                    className={`pt-1 text-right text-sm tabular-nums ${readerMutedText}`}
+                                                >
+                                                    {item.number}
+                                                </span>
+                                                <p
+                                                    data-verse-number={
+                                                        item.number
+                                                    }
+                                                >
+                                                    {renderVerseContent(
+                                                        item.content,
+                                                        openFootnote,
+                                                    )}
+                                                </p>
+                                                <NoteMarker
+                                                    notes={notesForVerse(
+                                                        item.number,
+                                                    )}
+                                                    onClick={() =>
+                                                        openNotesAt(item.number)
+                                                    }
+                                                />
+                                            </div>
+                                        </Fragment>
+                                    ),
+                                )
                             )}
                         </article>
                     </div>

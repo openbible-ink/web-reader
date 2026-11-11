@@ -23,6 +23,14 @@ test('public reader passes an automated accessibility scan', async ({ page }) =>
     await expectAccessible(page);
 });
 
+test('translation comparison passes an automated accessibility scan', async ({
+    page,
+}) => {
+    await page.goto('/read/JHN/1?compare=webp');
+    await expect(page.getByLabel('Compared translations')).toBeVisible();
+    await expectAccessible(page);
+});
+
 test('authentication pages pass automated accessibility scans', async ({ page }) => {
     await page.goto('/login');
     await expectAccessible(page);

@@ -16,9 +16,11 @@ void createInertiaApp({
                 name === 'reader' ||
                 name === 'search' ||
                 name === 'book-overview' ||
+                name === 'books' ||
                 name === 'dashboard' ||
                 name === 'bookmarks' ||
                 name === 'highlights' ||
+                name === 'notes' ||
                 name === 'note-show' ||
                 name === 'auth/login' ||
                 name === 'auth/register':

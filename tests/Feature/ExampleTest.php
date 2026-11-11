@@ -32,6 +32,32 @@ class ExampleTest extends TestCase
                 ->where('chapter', '1'));
     }
 
+    public function test_book_overview_receives_real_chapter_verse_counts(): void
+    {
+        $this->john();
+
+        $this->get(route('books.show', ['book' => 'JHN']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('book-overview')
+                ->where('book.chapterCount', 21)
+                ->where('book.verseCounts.1', 51)
+                ->where('book.verseCounts.21', 25));
+    }
+
+    public function test_book_index_lists_the_available_library(): void
+    {
+        $this->john();
+
+        $this->get(route('books.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('books')
+                ->has('books', 1)
+                ->where('books.0.code', 'JHN')
+                ->where('books.0.name', 'John'));
+    }
+
     /** @return array{BibleEdition, BibleBook} */
     private function john(): array
     {

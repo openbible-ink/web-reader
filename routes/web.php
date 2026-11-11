@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\BookIndexController;
 use App\Http\Controllers\BookmarkController;
 use App\Http\Controllers\BookOverviewController;
 use App\Http\Controllers\DashboardController;
@@ -19,6 +20,7 @@ Route::get('/books/john', fn () => redirect()->route('books.show', [
     'book' => 'JHN',
 ]))->name('books.john');
 Route::get('/read/{book}/{chapter}', ReaderController::class)->name('reader.show');
+Route::get('/books', BookIndexController::class)->name('books.index');
 Route::get('/books/{book}', BookOverviewController::class)->name('books.show');
 Route::get('/sitemap.xml', SitemapController::class)->name('sitemap');
 Route::get('/read/{edition}/{book}/{chapter}', fn (Request $request, string $edition, string $book, string $chapter) => redirect()->route(

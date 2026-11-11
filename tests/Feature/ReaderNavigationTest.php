@@ -109,6 +109,35 @@ class ReaderNavigationTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('edition.slug', 'webp'));
     }
 
+    public function test_reader_can_load_a_second_translation_for_comparison(): void
+    {
+        $oeb = BibleEdition::query()->create([
+            'slug' => 'oeb', 'name' => 'Open English Bible', 'abbreviation' => 'OEB',
+            'language' => 'en', 'source_format' => 'usfm',
+        ]);
+        $web = BibleEdition::query()->create([
+            'slug' => 'webp', 'name' => 'World English Bible', 'abbreviation' => 'WEB',
+            'language' => 'en-US', 'source_format' => 'usfm',
+        ]);
+        foreach ([$oeb, $web] as $edition) {
+            $edition->books()->create([
+                'book_code' => 'JHN', 'name' => 'John',
+                'source_path' => "/{$edition->slug}-john.usfm", 'chapter_count' => 21,
+            ]);
+        }
+
+        $this->get(route('reader.show', [
+            'book' => 'JHN',
+            'chapter' => '1',
+            'compare' => 'webp',
+        ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('edition.slug', 'oeb')
+                ->where('comparison.edition.slug', 'webp')
+                ->where('comparison.book.sourceUrl', url('/webp-john.usfm')));
+    }
+
     public function test_user_can_explicitly_change_their_default_translation(): void
     {
         $oeb = BibleEdition::query()->create([

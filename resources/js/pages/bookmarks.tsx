@@ -1,5 +1,6 @@
 import { Head, Link, router } from '@inertiajs/react';
-import { ArrowLeft, Bookmark, BookOpen, Trash2 } from 'lucide-react';
+import { Bookmark, Trash2 } from 'lucide-react';
+import SavedItemsPageShell from '@/components/saved-items-page-shell';
 
 interface BookmarkItem {
     id: string;
@@ -30,41 +31,9 @@ export default function Bookmarks({
     return (
         <>
             <Head title="Bookmarks" />
-            <div className="min-h-svh bg-[#f1ece3] text-[#211f1b]">
-                <header className="border-b border-[#ddd4c7] bg-[#faf7f0]">
-                    <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-5 sm:px-8">
-                        <Link
-                            href="/dashboard"
-                            className="flex items-center gap-3 rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#a95624]"
-                        >
-                            <img
-                                src="/images/brand/open-bible-mark-dark-128.png"
-                                alt=""
-                                className="size-9 object-contain"
-                            />
-                            <span className="font-serif text-lg font-semibold">
-                                Open Bible
-                            </span>
-                        </Link>
-                        <Link
-                            href="/read/JHN/1"
-                            className="flex items-center gap-2 rounded-full border border-[#d9d0c4] bg-white/55 px-4 py-2 font-serif text-sm hover:bg-white"
-                        >
-                            <BookOpen className="size-4" />
-                            Reader
-                        </Link>
-                    </div>
-                </header>
-
+            <SavedItemsPageShell active="bookmarks">
                 <main className="mx-auto max-w-5xl px-5 py-10 sm:px-8 sm:py-14">
-                    <Link
-                        href="/dashboard"
-                        className="mb-7 inline-flex items-center gap-2 font-serif text-sm text-[#71695e] hover:text-black"
-                    >
-                        <ArrowLeft className="size-4" />
-                        Dashboard
-                    </Link>
-                    <div className="flex items-end justify-between gap-5">
+                    <div className="flex items-start justify-between gap-5">
                         <div>
                             <h1 className="font-serif text-5xl font-black tracking-[-0.045em] sm:text-6xl">
                                 Bookmarks
@@ -72,11 +41,14 @@ export default function Bookmarks({
                             <p className="mt-3 font-serif text-lg text-[#7b7368]">
                                 Passages you want to return to.
                             </p>
+                            <p className="mt-1.5 font-serif text-sm text-[#8a8277]">
+                                ({bookmarks.length}{' '}
+                                {bookmarks.length === 1
+                                    ? 'bookmark'
+                                    : 'bookmarks'}
+                                )
+                            </p>
                         </div>
-                        <span className="font-serif text-sm text-[#8a8277]">
-                            {bookmarks.length}{' '}
-                            {bookmarks.length === 1 ? 'bookmark' : 'bookmarks'}
-                        </span>
                     </div>
 
                     {bookmarks.length ? (
@@ -105,7 +77,7 @@ export default function Bookmarks({
                                     <button
                                         type="button"
                                         onClick={() => remove(bookmark)}
-                                        className="grid size-10 shrink-0 place-items-center rounded-full text-[#9b3f29] hover:bg-[#f5e6df] focus-visible:outline-2 focus-visible:outline-[#9b3f29]"
+                                        className="grid size-10 shrink-0 cursor-pointer place-items-center rounded-full text-[#9b3f29] hover:bg-[#f5e6df] focus-visible:outline-2 focus-visible:outline-[#9b3f29]"
                                         aria-label={`Remove ${bookmark.title || bookmark.reference}`}
                                     >
                                         <Trash2 className="size-4" />
@@ -132,7 +104,7 @@ export default function Bookmarks({
                         </section>
                     )}
                 </main>
-            </div>
+            </SavedItemsPageShell>
         </>
     );
 }

@@ -83,6 +83,33 @@ class ReaderController extends Controller
                 'bookCode' => $availableEdition->books->firstOrFail()->book_code,
             ]);
 
+        $comparison = null;
+        $comparisonSlug = $request->string('compare')->toString();
+        if ($comparisonSlug !== '' && $comparisonSlug !== $edition->slug) {
+            $comparisonBook = BibleBook::query()
+                ->with('edition')
+                ->where('book_code', $book->book_code)
+                ->whereHas('edition', fn ($query) => $query->where('slug', $comparisonSlug))
+                ->first();
+
+            if ($comparisonBook && (int) $chapter <= $comparisonBook->chapter_count) {
+                $comparison = [
+                    'edition' => [
+                        'slug' => $comparisonBook->edition->slug,
+                        'name' => $comparisonBook->edition->name,
+                        'abbreviation' => $comparisonBook->edition->abbreviation,
+                        'language' => $comparisonBook->edition->language,
+                        'sourceFormat' => $comparisonBook->edition->source_format,
+                        'variantProfile' => $comparisonBook->edition->variant_profile,
+                    ],
+                    'book' => [
+                        'code' => $comparisonBook->book_code,
+                        'sourceUrl' => asset($comparisonBook->source_path),
+                    ],
+                ];
+            }
+        }
+
         $defaultEdition = $request->user()?->preferredEdition
             ?? BibleEdition::query()->where('slug', 'oeb')->first();
 
@@ -220,6 +247,7 @@ class ReaderController extends Controller
                 : [],
             'availableEditions' => $availableEditions,
             'defaultEditionSlug' => $defaultEdition?->slug ?? $edition->slug,
+            'comparison' => $comparison,
             'libraryBooks' => $libraryBooks,
             'artworks' => $placements->map(fn (ScriptureArtworkPassage $placement) => [
                 'id' => $placement->artwork->id,

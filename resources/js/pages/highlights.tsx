@@ -1,12 +1,12 @@
 import { Head, Link, router } from '@inertiajs/react';
 import {
-    ArrowLeft,
-    BookOpen,
     ChevronLeft,
     ChevronRight,
     Highlighter,
+    Palette,
     Trash2,
 } from 'lucide-react';
+import SavedItemsPageShell from '@/components/saved-items-page-shell';
 
 const colours = {
     yellow: { label: 'Gold', swatch: '#d9a441', wash: '#f6e7ac' },
@@ -89,39 +89,9 @@ export default function Highlights({
     return (
         <>
             <Head title="Highlights" />
-            <div className="min-h-svh bg-[#f1ece3] text-[#211f1b]">
-                <header className="border-b border-[#ddd4c7] bg-[#faf7f0]">
-                    <div className="mx-auto flex max-w-5xl items-center justify-between px-5 py-5 sm:px-8">
-                        <Link
-                            href="/dashboard"
-                            className="flex items-center gap-3 rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#a95624]"
-                        >
-                            <img
-                                src="/images/brand/open-bible-mark-dark-128.png"
-                                alt=""
-                                className="size-9 object-contain"
-                            />
-                            <span className="font-serif text-lg font-semibold">
-                                Open Bible
-                            </span>
-                        </Link>
-                        <Link
-                            href="/read/JHN/1"
-                            className="flex items-center gap-2 rounded-full border border-[#d9d0c4] bg-white/55 px-4 py-2 font-serif text-sm hover:bg-white"
-                        >
-                            <BookOpen className="size-4" /> Reader
-                        </Link>
-                    </div>
-                </header>
-
+            <SavedItemsPageShell active="highlights">
                 <main className="mx-auto max-w-5xl px-5 py-10 sm:px-8 sm:py-14">
-                    <Link
-                        href="/dashboard"
-                        className="mb-7 inline-flex items-center gap-2 font-serif text-sm text-[#71695e] hover:text-black"
-                    >
-                        <ArrowLeft className="size-4" /> Dashboard
-                    </Link>
-                    <div className="flex items-end justify-between gap-5">
+                    <div className="flex items-start justify-between gap-5">
                         <div>
                             <h1 className="font-serif text-5xl font-black tracking-[-0.045em] sm:text-6xl">
                                 Highlights
@@ -129,21 +99,21 @@ export default function Highlights({
                             <p className="mt-3 font-serif text-lg text-[#7b7368]">
                                 Words and passages that stood out to you.
                             </p>
-                        </div>
-                        <div className="flex flex-col items-end gap-2">
-                            <span className="font-serif text-sm text-[#8a8277]">
-                                {totalHighlights}{' '}
+                            <p className="mt-1.5 font-serif text-sm text-[#8a8277]">
+                                ({totalHighlights}{' '}
                                 {totalHighlights === 1
                                     ? 'highlight'
                                     : 'highlights'}
-                            </span>
-                            <Link
-                                href="/dashboard#preferences"
-                                className="font-serif text-xs text-[#9a672d] underline decoration-[#9a672d]/35 underline-offset-4 hover:decoration-current"
-                            >
-                                Edit colour labels
-                            </Link>
+                                )
+                            </p>
                         </div>
+                        <Link
+                            href="/dashboard#preferences"
+                            className="inline-flex shrink-0 items-center gap-2 rounded-full border border-[#d6c9b9] bg-[#fffaf2] px-5 py-3 font-serif text-sm text-[#5f4930] shadow-[0_8px_22px_rgba(75,55,31,0.08)] transition hover:border-[#bea98e] hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9a672d]"
+                        >
+                            <Palette className="size-4" strokeWidth={1.7} />
+                            Edit colour labels
+                        </Link>
                     </div>
 
                     <nav
@@ -191,68 +161,50 @@ export default function Highlights({
                     </nav>
 
                     {highlights.data.length ? (
-                        <div className="mt-9 space-y-4">
+                        <div className="mt-9 overflow-hidden rounded-2xl border border-[#ded6ca] bg-[#fffdf8]/80 shadow-[0_12px_35px_rgba(69,52,31,0.05)]">
                             {highlights.data.map((highlight) => {
                                 const colour = colours[highlight.color];
                                 return (
                                     <article
                                         key={highlight.id}
-                                        className="rounded-2xl border border-[#ded6ca] bg-[#fffdf8]/85 p-5 shadow-[0_12px_35px_rgba(69,52,31,0.05)] sm:p-6"
+                                        className="border-b border-[#e4ddd2] last:border-b-0"
                                     >
-                                        <div className="flex items-start gap-4">
+                                        <div className="flex items-start gap-4 p-5 sm:p-6">
                                             <span
-                                                className="mt-1 flex size-10 shrink-0 items-center justify-center rounded-full"
+                                                className="mt-0.5 flex size-11 shrink-0 items-center justify-center rounded-full"
                                                 style={{
                                                     backgroundColor:
-                                                        colour.wash,
-                                                    color: colour.swatch,
+                                                        colour.swatch,
+                                                    color: '#fffdf8',
                                                 }}
                                             >
                                                 <Highlighter
                                                     className="size-5"
-                                                    strokeWidth={1.7}
+                                                    strokeWidth={1.8}
                                                 />
                                             </span>
-                                            <div className="min-w-0 flex-1">
+                                            <div className="flex min-w-0 flex-1 items-start justify-between gap-4">
                                                 <Link
                                                     href={highlight.readerUrl}
-                                                    className="block rounded focus-visible:outline-2 focus-visible:outline-[#a95624]"
+                                                    className="min-w-0 flex-1 rounded focus-visible:outline-2 focus-visible:outline-[#a95624]"
                                                 >
-                                                    <h2 className="font-serif text-lg font-semibold">
+                                                    <h2 className="font-serif text-xl">
                                                         {highlight.reference}
                                                     </h2>
-                                                    <blockquote className="mt-2 font-serif text-xl leading-8 text-[#37322c]">
-                                                        “
-                                                        {highlight.selectedText}
-                                                        ”
+                                                    <blockquote className="mt-1 line-clamp-2 font-serif text-base leading-6 text-[#5d564d] sm:text-lg sm:leading-7">
+                                                        “{highlight.selectedText}”
                                                     </blockquote>
-                                                    <p className="mt-3 font-serif text-sm text-[#7e776d]">
-                                                        {highlight.edition.name}{' '}
-                                                        (
-                                                        {
-                                                            highlight.edition
-                                                                .abbreviation
-                                                        }
-                                                        )
-                                                    </p>
-                                                    {highlightLabels[
-                                                        highlight.color
-                                                    ]?.trim() && (
-                                                        <span
-                                                            className="mt-3 inline-flex rounded-full px-3 py-1 font-sans text-xs font-semibold text-[#4f493f]"
-                                                            style={{
-                                                                backgroundColor:
-                                                                    colour.wash,
-                                                            }}
-                                                        >
-                                                            {highlightLabel(
-                                                                highlight.color,
-                                                            )}
-                                                        </span>
-                                                    )}
                                                 </Link>
-                                                <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-[#e7dfd4] pt-4">
-                                                    <fieldset className="flex items-center gap-2">
+                                                <span
+                                                    className="shrink-0 rounded-full border border-[#ded5c9] bg-[#f6f0e7] px-3 py-1 font-sans text-[0.68rem] font-semibold tracking-[0.08em] text-[#6e655a] uppercase"
+                                                    title={highlight.edition.name}
+                                                >
+                                                    {highlight.edition.abbreviation}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e6ded2] bg-[#f7f1e8]/65 px-5 py-3 sm:px-6">
+                                            <fieldset className="flex items-center gap-2">
                                                         <legend className="sr-only">
                                                             Highlight colour
                                                         </legend>
@@ -290,20 +242,18 @@ export default function Highlights({
                                                                 />
                                                             ),
                                                         )}
-                                                    </fieldset>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() =>
-                                                            remove(highlight)
-                                                        }
-                                                        className="inline-flex cursor-pointer items-center gap-2 rounded-full px-3 py-2 font-serif text-sm text-[#9b3f29] hover:bg-[#f5e6df] focus-visible:outline-2 focus-visible:outline-[#9b3f29]"
-                                                        aria-label={`Remove highlight at ${highlight.reference}`}
-                                                    >
-                                                        <Trash2 className="size-4" />{' '}
-                                                        Remove
-                                                    </button>
-                                                </div>
-                                            </div>
+                                            </fieldset>
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    remove(highlight)
+                                                }
+                                                className="inline-flex cursor-pointer items-center gap-2 rounded-full px-3 py-2 font-serif text-sm text-[#9b3f29] hover:bg-[#f5e6df] focus-visible:outline-2 focus-visible:outline-[#9b3f29]"
+                                                aria-label={`Remove highlight at ${highlight.reference}`}
+                                            >
+                                                <Trash2 className="size-4" />{' '}
+                                                Remove
+                                            </button>
                                         </div>
                                     </article>
                                 );
@@ -311,7 +261,7 @@ export default function Highlights({
                             {highlights.lastPage > 1 && (
                                 <nav
                                     aria-label="Highlights pagination"
-                                    className="flex items-center justify-between border-t border-[#d9d0c4] pt-5"
+                                    className="flex items-center justify-between border-t border-[#d9d0c4] bg-[#faf6ef]/70 p-5"
                                 >
                                     <button
                                         type="button"
@@ -373,7 +323,7 @@ export default function Highlights({
                         </section>
                     )}
                 </main>
-            </div>
+            </SavedItemsPageShell>
         </>
     );
 }
