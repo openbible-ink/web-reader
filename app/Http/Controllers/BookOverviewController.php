@@ -24,6 +24,7 @@ class BookOverviewController extends Controller
                 'code' => $book->book_code,
                 'name' => $book->name,
                 'longName' => $book->long_name,
+                'sourceUrl' => asset($book->source_path),
                 'chapterCount' => $book->chapter_count,
                 'verseCounts' => $this->verseCounts($book->source_path, $book->chapter_count),
             ],

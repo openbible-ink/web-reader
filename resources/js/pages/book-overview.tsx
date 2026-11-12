@@ -1,9 +1,10 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { useState } from 'react';
 import SavedItemsPageShell from '@/components/saved-items-page-shell';
 import { getBookGradient } from '@/lib/book-gradients';
 import { getCanonicalBookMetadata } from '@/lib/book-metadata';
+import { loadScriptureSource } from '@/lib/scripture-source-cache';
 
 interface BookOverviewProps {
     canonicalUrl: string;
@@ -16,6 +17,7 @@ interface BookOverviewProps {
         code: string;
         name: string;
         longName?: string | null;
+        sourceUrl: string;
         chapterCount: number;
         verseCounts: Record<number, number>;
     };
@@ -31,6 +33,7 @@ export default function BookOverview({
     );
     const [selectedChapter, setSelectedChapter] = useState(1);
     const [selectedVerse, setSelectedVerse] = useState(1);
+    const [openingReader, setOpeningReader] = useState(false);
     const metadata = getCanonicalBookMetadata(book.code);
     const gradient = getBookGradient(book.code);
     const visualStyle = metadata.artworkUrl
@@ -53,11 +56,49 @@ export default function BookOverview({
         { length: Math.max(1, book.verseCounts[selectedChapter] ?? 0) },
         (_, index) => index + 1,
     );
+    const readingHref = (verse = selectedVerse) =>
+        verse === 1
+            ? `/read/${book.code}/${selectedChapter}`
+            : `/read/${book.code}/${selectedChapter}#verse-${verse}`;
 
     const chooseChapter = (chapter: number) => {
         setSelectedChapter(chapter);
         setSelectedVerse(1);
         setSelectionStep('verse');
+    };
+    const finishReadingTransition = () => {
+        delete window.document.documentElement.dataset.bookReadingTransition;
+    };
+    const beginReadingTransition = () => {
+        window.document.documentElement.dataset.bookReadingTransition =
+            'enter-reader';
+        window.setTimeout(finishReadingTransition, 2_000);
+    };
+    const preloadReader = () => {
+        void loadScriptureSource(book.sourceUrl).catch(() => undefined);
+    };
+    const openReader = async (verse = selectedVerse) => {
+        if (openingReader) return;
+
+        setOpeningReader(true);
+        const href = readingHref(verse);
+        try {
+            await loadScriptureSource(book.sourceUrl);
+            beginReadingTransition();
+            router.visit(href, {
+                viewTransition: (transition) => {
+                    void transition.finished.finally(
+                        finishReadingTransition,
+                    );
+                },
+            });
+        } catch {
+            router.visit(href);
+        }
+    };
+    const chooseVerse = (verse: number) => {
+        setSelectedVerse(verse);
+        if (verse !== 1) void openReader(verse);
     };
 
     return (
@@ -181,10 +222,11 @@ export default function BookOverview({
                                                 aria-pressed={
                                                     selectedVerse === verse
                                                 }
+                                                disabled={openingReader}
                                                 onClick={() =>
-                                                    setSelectedVerse(verse)
+                                                    chooseVerse(verse)
                                                 }
-                                                className={`grid aspect-square w-full cursor-pointer place-items-center rounded-lg font-serif text-base font-semibold tabular-nums transition focus-visible:ring-2 focus-visible:ring-[#a95624]/45 focus-visible:outline-none ${selectedVerse === verse ? 'bg-[#a95624] text-white shadow-sm' : 'bg-[#e9dfd1] text-stone-800 hover:bg-[#d9c5ad]'}`}
+                                                className={`grid aspect-square w-full cursor-pointer place-items-center rounded-lg font-serif text-base font-semibold tabular-nums transition focus-visible:ring-2 focus-visible:ring-[#a95624]/45 focus-visible:outline-none disabled:cursor-wait disabled:opacity-70 ${selectedVerse === verse ? 'bg-[#a95624] text-white shadow-sm' : 'bg-[#e9dfd1] text-stone-800 hover:bg-[#d9c5ad]'}`}
                                             >
                                                 {verse}
                                             </button>
@@ -192,13 +234,19 @@ export default function BookOverview({
                                     </div>
                                 </section>
                             )}
-                                <Link
-                                    href={`/read/${book.code}/${selectedChapter}#verse-${selectedVerse}`}
-                                    className="mt-8 inline-flex items-center gap-3 rounded-full bg-stone-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-[#9f5428] focus-visible:ring-2 focus-visible:ring-[#a95624]/45 focus-visible:ring-offset-2 focus-visible:outline-none"
+                                <button
+                                    type="button"
+                                    disabled={openingReader}
+                                    onClick={() => void openReader()}
+                                    onMouseEnter={preloadReader}
+                                    onFocus={preloadReader}
+                                    className="mt-8 inline-flex cursor-pointer items-center gap-3 rounded-full bg-stone-950 px-5 py-3 text-sm font-medium text-white transition hover:bg-[#9f5428] focus-visible:ring-2 focus-visible:ring-[#a95624]/45 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-wait disabled:opacity-75"
                                 >
-                                    {book.name} {selectedChapter}:{selectedVerse}
+                                    {openingReader
+                                        ? 'Opening reader…'
+                                        : `${book.name} ${selectedChapter}:${selectedVerse}`}
                                     <ArrowRight className="size-4" />
-                                </Link>
+                                </button>
                             </div>
                         </div>
                     </section>

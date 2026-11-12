@@ -22,9 +22,11 @@ import {
 import {
     Fragment,
     type CSSProperties,
+    type MouseEvent as ReactMouseEvent,
     type ReactNode,
     useCallback,
     useEffect,
+    useLayoutEffect,
     useMemo,
     useRef,
     useState,
@@ -34,6 +36,7 @@ import {
     loadScriptureSource,
 } from '@/lib/scripture-source-cache';
 import { getBookGradient } from '@/lib/book-gradients';
+import { getCanonicalBookMetadata } from '@/lib/book-metadata';
 import type {
     BibleDocument,
     FlowNode,
@@ -1174,6 +1177,13 @@ export default function Reader({
 }: ReaderProps) {
     const { auth } = usePage().props;
     const bookGradient = getBookGradient(book.code);
+    const bookMetadata = getCanonicalBookMetadata(book.code);
+    const [bookReadingTransition, setBookReadingTransition] = useState(
+        () =>
+            typeof window !== 'undefined' &&
+            window.document.documentElement.dataset.bookReadingTransition !==
+                undefined,
+    );
     const [loadedSource, setLoadedSource] = useState<{
         url: string;
         source: string;
@@ -1630,6 +1640,11 @@ export default function Reader({
             ),
         [fullContent],
     );
+    useLayoutEffect(() => {
+        if (!window.location.hash.startsWith('#verse-')) return;
+
+        window.scrollTo({ top: 0, behavior: 'auto' });
+    }, [book.code, chapter]);
     useEffect(() => {
         if (content.length === 0 || !window.location.hash.startsWith('#verse-'))
             return;
@@ -1638,16 +1653,30 @@ export default function Reader({
         const targetKey = `${book.code}:${chapter}:${targetId}`;
         if (resolvedVerseTargetRef.current === targetKey) return;
 
-        const frame = window.requestAnimationFrame(() => {
+        let frame = 0;
+        const scrollToTarget = () => {
             const target = window.document.getElementById(targetId);
             if (!target) return;
 
-            target.scrollIntoView({ behavior: 'auto', block: 'start' });
+            target.scrollIntoView({
+                behavior: window.matchMedia('(prefers-reduced-motion: reduce)')
+                    .matches
+                    ? 'auto'
+                    : 'smooth',
+                block: 'start',
+            });
             resolvedVerseTargetRef.current = targetKey;
-        });
+        };
+        const delay = bookReadingTransition ? 780 : 0;
+        const timeout = window.setTimeout(() => {
+            frame = window.requestAnimationFrame(scrollToTarget);
+        }, delay);
 
-        return () => window.cancelAnimationFrame(frame);
-    }, [book.code, chapter, content]);
+        return () => {
+            window.clearTimeout(timeout);
+            window.cancelAnimationFrame(frame);
+        };
+    }, [book.code, bookReadingTransition, chapter, content]);
     useEffect(() => {
         const registry = (
             CSS as unknown as {
@@ -2001,6 +2030,38 @@ export default function Reader({
         key: Key,
         value: TypographyPreferences[Key],
     ) => setTypography((current) => ({ ...current, [key]: value }));
+    const returnToBooks = (event: ReactMouseEvent<HTMLAnchorElement>) => {
+        if (
+            event.button !== 0 ||
+            event.metaKey ||
+            event.ctrlKey ||
+            event.shiftKey ||
+            event.altKey
+        ) {
+            return;
+        }
+
+        event.preventDefault();
+        window.sessionStorage.setItem('book-transition-code', book.code);
+        window.sessionStorage.setItem('book-transition-return', 'true');
+        window.document.documentElement.dataset.bookReadingTransition =
+            'return-books';
+        setBookReadingTransition(true);
+
+        const finishTransition = () => {
+            delete window.document.documentElement.dataset
+                .bookReadingTransition;
+        };
+        window.setTimeout(finishTransition, 2_000);
+        window.requestAnimationFrame(() => {
+            router.visit('/books', {
+                preserveScroll: true,
+                viewTransition: (transition) => {
+                    void transition.finished.finally(finishTransition);
+                },
+            });
+        });
+    };
     const switchTranslation = (slug: string) => {
         if (slug === edition.slug) {
             setTranslationOpen(false);
@@ -2592,9 +2653,6 @@ export default function Reader({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [focusedNoteExpanded, focusedNoteId]);
 
-    const longNamePrefix = book.longName?.endsWith(book.name)
-        ? book.longName.slice(0, -book.name.length).trim()
-        : book.longName;
     const readerSurface =
         typography.theme === 'dark'
             ? 'bg-[#211f1b] text-[#eee8dd]'
@@ -2877,7 +2935,14 @@ export default function Reader({
                     </div>
                 </header>
 
-                <section className="relative h-[30rem] overflow-hidden lg:h-[25.5rem]">
+                <section
+                    className="relative h-[30rem] overflow-hidden lg:h-[25.5rem]"
+                    style={
+                        bookReadingTransition
+                            ? { viewTransitionName: 'book-card' }
+                            : undefined
+                    }
+                >
                     {chapterArtwork ? (
                         <div
                             ref={heroArtworkRef}
@@ -2906,10 +2971,24 @@ export default function Reader({
                         data-reader-hero-text
                         className="absolute inset-x-0 bottom-14 z-10 px-7 will-change-transform sm:px-12 lg:bottom-12 lg:px-[3.4rem]"
                     >
-                        <p className="max-w-52 text-[0.72rem] font-semibold tracking-[0.3em] uppercase">
-                            {longNamePrefix ?? book.name}
+                        <p
+                            className="inline-flex rounded-full bg-black/60 px-3 py-1.5 text-[0.67rem] font-semibold tracking-[0.24em] text-[#fff4e7] uppercase shadow-sm backdrop-blur-[2px]"
+                            style={
+                                bookReadingTransition
+                                    ? { viewTransitionName: 'book-category' }
+                                    : undefined
+                            }
+                        >
+                            {bookMetadata.category}
                         </p>
-                        <h1 className="mt-2 font-serif text-[4.4rem] leading-none font-black tracking-[-0.04em] lg:text-[4.8rem]">
+                        <h1
+                            className="mt-3 font-serif text-[4.4rem] leading-none font-black tracking-[-0.04em] lg:text-[4.8rem]"
+                            style={
+                                bookReadingTransition
+                                    ? { viewTransitionName: 'book-title' }
+                                    : undefined
+                            }
+                        >
                             {book.name}
                         </h1>
                         <div className="mt-5 h-0.5 w-16 bg-[#bd6b32]" />
@@ -2929,6 +3008,9 @@ export default function Reader({
                                 typography.theme === 'dark'
                                     ? '#f29a5a'
                                     : '#b85c26',
+                            viewTransitionName: bookReadingTransition
+                                ? 'reader-panel'
+                                : undefined,
                         } as CSSProperties
                     }
                 >
@@ -2939,13 +3021,14 @@ export default function Reader({
                             className={`sticky top-0 z-20 -mx-2 flex h-[5.4rem] items-center justify-between border-b px-2 backdrop-blur-[2px] ${readerHeaderSurface}`}
                         >
                             <div className="flex items-center gap-3">
-                                <Link
-                                    href={`/books/${book.code}`}
-                                    aria-label={`Back to ${book.name} overview`}
+                                <a
+                                    href="/books"
+                                    onClick={returnToBooks}
+                                    aria-label="Back to books"
                                     className={`grid size-9 place-items-center rounded-full ${readerControl}`}
                                 >
                                     <ArrowLeft className="size-5" />
-                                </Link>
+                                </a>
                                 <CustomSelect
                                     label="Chapter"
                                     value={chapter}
