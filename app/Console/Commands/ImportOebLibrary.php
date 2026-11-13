@@ -58,6 +58,8 @@ class ImportOebLibrary extends Command
             }
         }
 
+        $this->call('bible:index-search', ['--edition' => 'oeb']);
+
         return self::SUCCESS;
     }
 }

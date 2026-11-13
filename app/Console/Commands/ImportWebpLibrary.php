@@ -18,6 +18,7 @@ class ImportWebpLibrary extends Command
             $result = $library->import($this->argument('source'));
         } catch (Throwable $exception) {
             $this->error($exception->getMessage());
+
             return self::FAILURE;
         }
 
@@ -25,6 +26,8 @@ class ImportWebpLibrary extends Command
         if ($result['ignored'] !== []) {
             $this->line('Ignored non-canonical/supporting files: '.count($result['ignored']));
         }
+        $this->call('bible:index-search', ['--edition' => 'webp']);
+
         return self::SUCCESS;
     }
 }

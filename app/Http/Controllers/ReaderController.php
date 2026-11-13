@@ -208,6 +208,7 @@ class ReaderController extends Controller
                     ->values()
                 : [],
             'highlightLabels' => HighlightLabels::forUser($request->user()),
+            'redLetterWords' => (bool) ($request->user()?->red_letter_words ?? false),
             'focusedNoteId' => $focusedNoteId,
             'focusedNoteExpanded' => $focusedNoteExpanded,
             'notes' => $request->user()

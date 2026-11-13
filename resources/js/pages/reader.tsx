@@ -136,6 +136,7 @@ interface ReaderProps {
         bookCode: string;
     }>;
     defaultEditionSlug: string;
+    redLetterWords: boolean;
     comparison?: {
         edition: {
             slug: string;
@@ -633,6 +634,8 @@ function renderInline(
                 );
             if (node.style === 'em' || node.style === 'qs')
                 return <em>{content}</em>;
+            if (node.style === 'wj' || node.style === '+wj')
+                return <span data-words-of-jesus>{content}</span>;
             return <span>{content}</span>;
         }
         case 'note':
@@ -1164,6 +1167,7 @@ export default function Reader({
     focusedSectionKey,
     availableEditions,
     defaultEditionSlug,
+    redLetterWords,
     comparison,
     libraryBooks,
     artworks = [],
@@ -1925,6 +1929,7 @@ export default function Reader({
                 void Promise.allSettled(
                     entrances.map((entrance) => entrance.finished),
                 ).finally(() => {
+                    entrances.forEach((entrance) => entrance.cancel());
                     delete window.document.documentElement.dataset
                         .chapterTransitionDirection;
                     delete window.document.documentElement.dataset
@@ -3001,6 +3006,9 @@ export default function Reader({
                 <main
                     ref={readerMainRef}
                     data-reader-main
+                    data-red-letter-words={
+                        redLetterWords ? 'true' : undefined
+                    }
                     className={`relative z-20 -mt-7 min-h-screen rounded-t-[2rem] shadow-[0_-8px_30px_rgba(62,49,30,0.06)] lg:rounded-t-[1.8rem] ${readerSurface}`}
                     style={
                         {
@@ -3008,6 +3016,10 @@ export default function Reader({
                                 typography.theme === 'dark'
                                     ? '#f29a5a'
                                     : '#b85c26',
+                            '--reader-words-of-jesus':
+                                typography.theme === 'dark'
+                                    ? '#f08a82'
+                                    : '#a33a32',
                             viewTransitionName: bookReadingTransition
                                 ? 'reader-panel'
                                 : undefined,

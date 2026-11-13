@@ -7,6 +7,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HighlightController;
 use App\Http\Controllers\NoteController;
 use App\Http\Controllers\ReaderController;
+use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SitemapController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -30,7 +31,7 @@ Route::get('/read/{edition}/{book}/{chapter}', fn (Request $request, string $edi
 Route::get('/books/{edition}/{book}', fn (string $edition, string $book) => redirect()->route('books.show', [
     'book' => $book,
 ]))->name('books.legacy');
-Route::inertia('/search', 'search')->name('search');
+Route::get('/search', SearchController::class)->name('search');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');

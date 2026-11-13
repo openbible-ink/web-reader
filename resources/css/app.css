@@ -8,6 +8,10 @@
 
 @custom-variant dark (&:is(.dark *));
 
+[data-red-letter-words='true'] [data-words-of-jesus] {
+    color: var(--reader-words-of-jesus);
+}
+
 ::view-transition-group(book-card),
 ::view-transition-group(book-category),
 ::view-transition-group(book-title),

@@ -13,6 +13,7 @@ import {
     LogOut,
     Menu,
     Pencil,
+    Quote,
     Search,
     Save,
     Settings2,
@@ -67,6 +68,7 @@ interface DashboardProps {
     }>;
     defaultEditionSlug: string;
     highlightLabels: Record<DashboardHighlight['color'], string>;
+    redLetterWords: boolean;
 }
 
 interface PaginatedSavedItems {
@@ -198,6 +200,7 @@ export default function Dashboard({
     availableEditions,
     defaultEditionSlug,
     highlightLabels,
+    redLetterWords,
 }: DashboardProps) {
     const { auth } = usePage().props;
     const { appearance, resolvedAppearance } = useAppearance();
@@ -206,6 +209,9 @@ export default function Dashboard({
     const [editableHighlightLabels, setEditableHighlightLabels] =
         useState(highlightLabels);
     const [highlightLabelsSaving, setHighlightLabelsSaving] = useState(false);
+    const [redLetterWordsEnabled, setRedLetterWordsEnabled] =
+        useState(redLetterWords);
+    const [redLetterWordsSaving, setRedLetterWordsSaving] = useState(false);
     const user = auth.user;
     const themeLabel =
         appearance === 'system'
@@ -242,6 +248,23 @@ export default function Dashboard({
                 preserveScroll: true,
                 onStart: () => setHighlightLabelsSaving(true),
                 onFinish: () => setHighlightLabelsSaving(false),
+            },
+        );
+    };
+
+    const toggleRedLetterWords = () => {
+        if (redLetterWordsSaving) return;
+
+        const enabled = !redLetterWordsEnabled;
+        setRedLetterWordsEnabled(enabled);
+        router.patch(
+            '/settings/red-letter-words',
+            { enabled },
+            {
+                preserveScroll: true,
+                onStart: () => setRedLetterWordsSaving(true),
+                onError: () => setRedLetterWordsEnabled(!enabled),
+                onFinish: () => setRedLetterWordsSaving(false),
             },
         );
     };
@@ -850,6 +873,31 @@ export default function Dashboard({
                                             <ChevronRight className="ml-auto size-4" />
                                         </Link>
                                     </div>
+                                    <div className="flex items-center gap-3 border-t border-[#e1d9ce] py-4">
+                                        <Quote className="size-6 shrink-0 stroke-[1.4] text-[#a33a32]" />
+                                        <div className="min-w-0 flex-1 font-serif">
+                                            <p className="text-sm">
+                                                Words of Jesus
+                                            </p>
+                                            <p className="mt-0.5 text-xs leading-5 text-[#6f685f]">
+                                                Use red lettering where the translation provides it.
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            role="switch"
+                                            aria-checked={redLetterWordsEnabled}
+                                            aria-label="Show the words of Jesus in red"
+                                            disabled={redLetterWordsSaving}
+                                            onClick={toggleRedLetterWords}
+                                            className={`relative h-7 w-12 shrink-0 cursor-pointer rounded-full border transition focus-visible:ring-2 focus-visible:ring-[#a33a32]/45 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-wait disabled:opacity-60 ${redLetterWordsEnabled ? 'border-[#8f302b] bg-[#a33a32]' : 'border-[#c8beb1] bg-[#d8d0c5]'}`}
+                                        >
+                                            <span
+                                                aria-hidden="true"
+                                                className={`absolute top-1/2 left-0.5 size-5 -translate-y-1/2 rounded-full bg-white shadow-sm transition-transform ${redLetterWordsEnabled ? 'translate-x-[1.375rem]' : 'translate-x-0'}`}
+                                            />
+                                        </button>
+                                    </div>
                                     <form
                                         className="mt-2 border-t border-[#e1d9ce] pt-5"
                                         onSubmit={(event) => {
@@ -857,7 +905,7 @@ export default function Dashboard({
                                             saveHighlightLabels();
                                         }}
                                     >
-                                        <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
                                             <div>
                                                 <h3 className="font-serif text-base font-semibold">
                                                     Highlight labels
@@ -866,16 +914,6 @@ export default function Dashboard({
                                                     Give each colour a personal meaning. These labels appear when choosing and reviewing highlights.
                                                 </p>
                                             </div>
-                                            <button
-                                                type="submit"
-                                                disabled={highlightLabelsSaving}
-                                                className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-[#3f6b50] px-4 py-2 font-serif text-sm font-semibold text-white transition hover:bg-[#345a43] focus-visible:ring-2 focus-visible:ring-[#3f6b50] focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-wait disabled:opacity-60"
-                                            >
-                                                <Save className="size-4" />
-                                                {highlightLabelsSaving
-                                                    ? 'Saving…'
-                                                    : 'Save labels'}
-                                            </button>
                                         </div>
                                         <div className="mt-4 grid gap-3 sm:grid-cols-2">
                                             {(
@@ -927,6 +965,18 @@ export default function Dashboard({
                                                     />
                                                 </label>
                                             ))}
+                                        </div>
+                                        <div className="mt-4 flex justify-end">
+                                            <button
+                                                type="submit"
+                                                disabled={highlightLabelsSaving}
+                                                className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-[#3f6b50] px-4 py-2 font-serif text-sm font-semibold text-white transition hover:bg-[#345a43] focus-visible:ring-2 focus-visible:ring-[#3f6b50] focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-wait disabled:opacity-60"
+                                            >
+                                                <Save className="size-4" />
+                                                {highlightLabelsSaving
+                                                    ? 'Saving…'
+                                                    : 'Save labels'}
+                                            </button>
                                         </div>
                                     </form>
                                 </Panel>

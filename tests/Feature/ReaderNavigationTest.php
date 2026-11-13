@@ -14,8 +14,13 @@ class ReaderNavigationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_search_placeholder_is_available(): void
+    public function test_search_page_is_available(): void
     {
+        BibleEdition::query()->create([
+            'slug' => 'oeb', 'name' => 'Open English Bible', 'abbreviation' => 'OEB',
+            'language' => 'en', 'source_format' => 'usfm',
+        ]);
+
         $this->get(route('search'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->component('search'));
