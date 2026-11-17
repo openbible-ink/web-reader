@@ -58,6 +58,39 @@ class ScriptureSearchTest extends TestCase
                 ->where('results.data.0.verse', '12'));
     }
 
+    public function test_it_returns_search_occurrences_grouped_by_book_and_testament(): void
+    {
+        $edition = $this->catalogue();
+        $genesis = $edition->books()->create([
+            'book_code' => 'GEN', 'name' => 'Genesis',
+            'source_path' => '/bibles/oeb/01-Genesis.usfm.db', 'chapter_count' => 50, 'canon_position' => 1,
+        ]);
+        ScriptureSearchVerse::query()->create([
+            'edition_id' => $edition->id, 'bible_book_id' => $genesis->id,
+            'book_code' => 'GEN', 'book_name' => 'Genesis', 'canon_position' => 1,
+            'chapter' => '1', 'verse' => '3', 'text' => 'Light appeared, and the light was good.',
+        ]);
+
+        $this->get('/search?q=light')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('distribution.total', 3)
+                ->where('distribution.books.0.code', 'GEN')
+                ->where('distribution.books.0.category', 'Pentateuch')
+                ->where('distribution.books.0.count', 2)
+                ->where('distribution.books.1.code', 'JHN')
+                ->where('distribution.books.1.category', 'Gospel')
+                ->where('distribution.books.1.count', 1)
+                ->where('distribution.testaments.0.key', 'old')
+                ->where('distribution.testaments.0.count', 2)
+                ->where('distribution.testaments.1.key', 'new')
+                ->where('distribution.testaments.1.count', 1));
+
+        $this->get('/search?q=John+8%3A12')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('distribution', null));
+    }
+
     public function test_quick_search_returns_the_same_results_as_json(): void
     {
         $this->catalogue();

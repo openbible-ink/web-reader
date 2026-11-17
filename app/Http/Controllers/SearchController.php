@@ -34,6 +34,7 @@ class SearchController extends Controller
             ->flatMap(fn (array $filter) => CanonicalBookMetadata::bookCodesForCategory($filter['label']))->unique()->values();
         $reference = $searchText !== '' ? $this->reference($searchText, $edition) : null;
         $results = null;
+        $distribution = null;
 
         if ($query !== '' && $reference === null && $regexError === null) {
             $terms = $regex === null ? $this->searchTerms($searchText) : collect();
@@ -109,6 +110,20 @@ class SearchController extends Controller
                             'translation' => $edition->slug,
                         ], false).'#verse-'.$verse->verse,
                     ]));
+
+            if (! in_array('notes', $searchScopes, true)) {
+                $distribution = $this->searchDistribution(
+                    $edition,
+                    $books,
+                    $effectiveBookCodes,
+                    $testaments,
+                    $categoryBookCodes,
+                    $terms,
+                    $searchScopes,
+                    $regex,
+                    $regexWordAnchored,
+                );
+            }
         }
 
         if ($request->boolean('quick')) {
@@ -144,8 +159,104 @@ class SearchController extends Controller
             'selectedBook' => $effectiveBookCodes->first() ?? '',
             'reference' => $reference,
             'results' => $results,
+            'distribution' => $distribution,
             'indexReady' => ScriptureSearchVerse::query()->where('edition_id', $edition->id)->exists(),
         ]);
+    }
+
+    /**
+     * @param  Collection<int, BibleBook>  $books
+     * @param  Collection<int, string>  $bookCodes
+     * @param  Collection<int, string>  $testaments
+     * @param  Collection<int, string>  $categoryBookCodes
+     * @param  Collection<int, string>  $terms
+     * @param  array<int, string>  $searchScopes
+     * @return array{books: array<int, array{code: string, name: string, testament: string, category: string, count: int}>, testaments: array<int, array{key: string, name: string, count: int}>, total: int}
+     */
+    private function searchDistribution(BibleEdition $edition, Collection $books, Collection $bookCodes, Collection $testaments, Collection $categoryBookCodes, Collection $terms, array $searchScopes, ?string $regex, bool $regexWordAnchored): array
+    {
+        $rows = ScriptureSearchVerse::query()
+            ->where('edition_id', $edition->id)
+            ->when($bookCodes->isNotEmpty(), fn (Builder $builder) => $builder->whereIn('book_code', $bookCodes))
+            ->when($testaments->isNotEmpty(), fn (Builder $builder) => $builder->where(function (Builder $query) use ($testaments): void {
+                if ($testaments->contains('old')) {
+                    $query->orWhereBetween('canon_position', [1, 39]);
+                }
+                if ($testaments->contains('new')) {
+                    $query->orWhere('canon_position', '>=', 40);
+                }
+            }))
+            ->when($categoryBookCodes->isNotEmpty(), fn (Builder $builder) => $builder->whereIn('book_code', $categoryBookCodes))
+            ->orderBy('canon_position')
+            ->get(['book_code', 'canon_position', 'chapter', 'section_key', 'section_title', 'footnote_text', 'text']);
+
+        $counts = collect();
+        $seenHeadings = [];
+
+        foreach ($rows as $row) {
+            $values = collect();
+            if (in_array('verse', $searchScopes, true) && $row->text) {
+                $values->push($row->text);
+            }
+            if (in_array('footnotes', $searchScopes, true) && $row->footnote_text) {
+                $values->push($row->footnote_text);
+            }
+            if (in_array('headings', $searchScopes, true) && $row->section_title) {
+                $headingKey = implode('|', [$row->book_code, $row->chapter, $row->section_key ?: Str::slug($row->section_title)]);
+                if (! isset($seenHeadings[$headingKey])) {
+                    $seenHeadings[$headingKey] = true;
+                    $values->push($row->section_title);
+                }
+            }
+
+            $haystack = Str::lower($values->join(' '));
+            $matches = $regex !== null
+                ? $this->matchesRegex($haystack, $regex, $regexWordAnchored)
+                : ($terms->isNotEmpty() && $terms->every(fn (string $term) => str_contains($haystack, $term)));
+            if (! $matches) {
+                continue;
+            }
+
+            $instances = $values->sum(fn (string $value) => $this->occurrenceCount($value, $terms, $regex, $regexWordAnchored));
+            if ($instances > 0) {
+                $counts->put($row->book_code, ($counts->get($row->book_code, 0) + $instances));
+            }
+        }
+
+        $bookDistribution = $books->map(fn (BibleBook $book) => [
+            'code' => $book->book_code,
+            'name' => $book->name,
+            'testament' => ($book->canon_position ?? 40) <= 39 ? 'old' : 'new',
+            'category' => CanonicalBookMetadata::category($book->book_code),
+            'count' => (int) $counts->get($book->book_code, 0),
+        ])->values();
+
+        return [
+            'books' => $bookDistribution->all(),
+            'testaments' => [
+                ['key' => 'old', 'name' => 'Old Testament', 'count' => (int) $bookDistribution->where('testament', 'old')->sum('count')],
+                ['key' => 'new', 'name' => 'New Testament', 'count' => (int) $bookDistribution->where('testament', 'new')->sum('count')],
+            ],
+            'total' => (int) $bookDistribution->sum('count'),
+        ];
+    }
+
+    /** @param Collection<int, string> $terms */
+    private function occurrenceCount(string $value, Collection $terms, ?string $regex, bool $regexWordAnchored): int
+    {
+        if ($regex !== null) {
+            if ($regexWordAnchored) {
+                return collect(preg_split('/[^\p{L}\p{N}\p{M}]+/u', $value) ?: [])
+                    ->filter()
+                    ->sum(fn (string $word) => preg_match($regex, $word) === 1 ? 1 : 0);
+            }
+
+            return preg_match_all($regex, $value, $matches) ?: 0;
+        }
+
+        $lower = Str::lower($value);
+
+        return (int) $terms->sum(fn (string $term) => mb_substr_count($lower, $term));
     }
 
     /** @param Collection<int, BibleBook> $books

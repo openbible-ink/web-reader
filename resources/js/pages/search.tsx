@@ -1,7 +1,7 @@
 import CustomSelect from '@/components/custom-select';
 import SavedItemsPageShell from '@/components/saved-items-page-shell';
 import { Head, Link, router } from '@inertiajs/react';
-import { ArrowLeft, ArrowRight, BookOpen, Search as SearchIcon, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BarChart3, BookOpen, List, Search as SearchIcon, Sparkles } from 'lucide-react';
 import { type FormEvent, type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 
 type Edition = { slug: string; name: string; abbreviation: string };
@@ -13,6 +13,65 @@ type FilterOption = SearchFilter & { description: string };
 type SearchResult = { id: number | string; kind?: 'verse' | 'section' | 'note'; title?: string; bookCode: string; bookName: string; chapter: string; verse: string; verseStart?: string; verseEnd?: string; reference?: string; sectionTitle: string | null; footnoteText: string | null; matchedIn: SearchScope[]; text: string; tags?: Array<{ id: string; name: string; slug: string }>; url: string };
 type Pagination = { data: SearchResult[]; current_page: number; last_page: number; per_page: number; total: number; prev_page_url: string | null; next_page_url: string | null };
 type Reference = { label: string; url: string };
+type DistributionItem = { code?: string; key?: string; name: string; testament?: 'old' | 'new'; category?: string; count: number };
+type Distribution = { books: DistributionItem[]; testaments: DistributionItem[]; total: number };
+
+function DistributionChart({ distribution }: { distribution: Distribution }) {
+    const [groupBy, setGroupBy] = useState<'books' | 'testaments'>('books');
+    const [category, setCategory] = useState('all');
+    const [hideEmptyBooks, setHideEmptyBooks] = useState(false);
+    const bookCategories = Array.from(new Set(distribution.books.map((item) => item.category).filter((value): value is string => Boolean(value))));
+    const categoryBooks = distribution.books.filter((item) => category === 'all' || item.category === category);
+    const hasEmptyBooks = categoryBooks.some((item) => item.count === 0);
+    const items = groupBy === 'books'
+        ? categoryBooks.filter((item) => !hideEmptyBooks || item.count > 0)
+        : distribution.testaments;
+    const maximum = Math.max(...items.map((item) => item.count), 1);
+    const displayedTotal = items.reduce((total, item) => total + item.count, 0);
+
+    useEffect(() => {
+        if (!hasEmptyBooks) setHideEmptyBooks(false);
+    }, [hasEmptyBooks]);
+
+    return (
+        <section className="mt-5 overflow-hidden rounded-3xl border border-[#d8cdbf] bg-[#fbf8f1] shadow-[0_18px_55px_-40px_rgba(48,37,25,0.7)]" aria-labelledby="distribution-heading">
+            <div className="border-b border-[#ded4c7] px-6 py-5 sm:px-8">
+                <div className="flex flex-wrap items-start justify-between gap-5">
+                    <div>
+                        <p className="text-[0.68rem] font-semibold tracking-[0.18em] text-[#8a7968] uppercase">Search distribution</p>
+                        <h3 id="distribution-heading" className="mt-1 font-serif text-2xl font-bold">Occurrences across scripture</h3>
+                        <p className="mt-1 font-serif text-sm text-[#766d62]">{displayedTotal.toLocaleString()} total {displayedTotal === 1 ? 'instance' : 'instances'} {groupBy === 'books' && category !== 'all' ? `across ${category.toLowerCase()} books` : 'in the selected search scope'}.</p>
+                    </div>
+                    <div role="tablist" aria-label="Group distribution by" className="flex rounded-full bg-[#e9dfd1] p-1">
+                        {(['books', 'testaments'] as const).map((value) => (
+                            <button key={value} type="button" role="tab" aria-selected={groupBy === value} onClick={() => setGroupBy(value)} className={`cursor-pointer rounded-full px-4 py-2 font-serif text-sm transition focus-visible:ring-2 focus-visible:ring-[#a95624] focus-visible:outline-none ${groupBy === value ? 'bg-[#fffdf8] font-semibold text-[#3c342c] shadow-sm' : 'text-[#71665a] hover:text-[#3c342c]'}`}>
+                                {value === 'books' ? 'Book' : 'Testament'}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                {groupBy === 'books' && <div className="mt-5 flex flex-wrap items-center gap-4">
+                    <div className="min-w-44 flex-1"><CustomSelect value={category} options={[{ value: 'all', label: 'All categories' }, ...bookCategories.map((value) => ({ value, label: value }))]} onChange={setCategory} label="Book category" variant="inline" triggerClassName="w-full bg-[#fffdf8]" /></div>
+                    <button type="button" disabled={!hasEmptyBooks} aria-pressed={hideEmptyBooks} onClick={() => setHideEmptyBooks((current) => !current)} className="cursor-pointer font-serif text-sm text-[#8f542c] underline decoration-[#caa27f] underline-offset-4 transition hover:text-[#643719] focus-visible:ring-2 focus-visible:ring-[#a95624] focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:text-[#9d948a] disabled:no-underline disabled:opacity-55">{hideEmptyBooks ? 'Show empty books' : 'Remove empty books'}</button>
+                </div>}
+            </div>
+            <div role="tabpanel" className="space-y-2 px-6 py-6 sm:px-8">
+                {items.map((item, index) => {
+                    const width = item.count === 0 ? 0 : Math.max((item.count / maximum) * 100, 1.5);
+                    return (
+                        <div key={`${groupBy}-${category}-${hideEmptyBooks}-${item.code ?? item.key}`} className="grid grid-cols-[minmax(7rem,10rem)_minmax(0,1fr)_3.5rem] items-center gap-3" aria-label={`${item.name}: ${item.count} ${item.count === 1 ? 'instance' : 'instances'}`}>
+                            <span className="truncate font-serif text-sm text-[#403830]" title={item.name}>{item.name}</span>
+                            <span className="relative h-7 overflow-hidden rounded-md bg-[#eee7dc]">
+                                <span className="distribution-bar-enter absolute inset-y-0 left-0 rounded-md bg-[linear-gradient(90deg,#79aeca,#356f91)]" style={{ width: `${width}%`, animationDelay: `${Math.min(index * 22, 440)}ms` }} />
+                            </span>
+                            <span className="text-right font-mono text-xs font-semibold text-[#715f50]">{item.count.toLocaleString()}</span>
+                        </div>
+                    );
+                })}
+            </div>
+        </section>
+    );
+}
 
 function SearchResultsSkeleton() {
     return (
@@ -82,9 +141,9 @@ function Highlighted({ text, query, regex = false }: { text: string; query: stri
     );
 }
 
-export default function Search({ query, searchText, searchFilters, isRegex, regexError, edition, editions, books, categories, selectedBook, reference, results, indexReady }: {
+export default function Search({ query, searchText, searchFilters, isRegex, regexError, edition, editions, books, categories, selectedBook, reference, results, distribution, indexReady }: {
     query: string; edition: Edition; editions: Edition[]; books: Book[]; selectedBook: string;
-    categories: string[]; searchText: string; searchScopes: SearchScope[]; searchFilters: SearchFilter[]; isRegex: boolean; regexError: string | null; reference: Reference | null; results: Pagination | null; indexReady: boolean;
+    categories: string[]; searchText: string; searchScopes: SearchScope[]; searchFilters: SearchFilter[]; isRegex: boolean; regexError: string | null; reference: Reference | null; results: Pagination | null; distribution: Distribution | null; indexReady: boolean;
 }) {
     const [search, setSearch] = useState(searchText);
     const [activeFilters, setActiveFilters] = useState<SearchFilter[]>(searchFilters);
@@ -93,12 +152,15 @@ export default function Search({ query, searchText, searchFilters, isRegex, rege
     const [filterMenuOpen, setFilterMenuOpen] = useState(false);
     const [activeFilterIndex, setActiveFilterIndex] = useState(0);
     const [resultsToolbarStuck, setResultsToolbarStuck] = useState(false);
+    const [resultsView, setResultsView] = useState<'results' | 'distribution'>('results');
     const [searching, setSearching] = useState(false);
     const [scrollToResults, setScrollToResults] = useState(false);
     const [resultsAnimationKey, setResultsAnimationKey] = useState(0);
     const searchInputRef = useRef<HTMLInputElement>(null);
     const resultsToolbarSentinelRef = useRef<HTMLDivElement>(null);
     const resultsAnchorRef = useRef<HTMLElement>(null);
+
+    useEffect(() => setResultsView('results'), [searchText, edition.slug]);
 
     useEffect(() => {
         if (!scrollToResults || searching) return;
@@ -317,13 +379,21 @@ export default function Search({ query, searchText, searchFilters, isRegex, rege
                                             <h2 className="mt-1 font-serif text-3xl font-bold">{results.total.toLocaleString()} {results.total === 1 ? 'result' : 'results'}</h2>
                                             {results.total > 0 && <p className="mt-1 font-serif text-sm text-[#81776c]">Showing {((results.current_page - 1) * results.per_page + 1).toLocaleString()}–{Math.min(results.current_page * results.per_page, results.total).toLocaleString()}</p>}
                                         </div>
-                                        <div className="flex flex-wrap items-center justify-end gap-4">
-                                            {selectedBook && <Link href={`/search?q=${encodeURIComponent(queryWithoutBook)}&translation=${edition.slug}`} className="font-serif text-sm text-[#8f542c] underline decoration-[#caa27f] underline-offset-4">Clear book filter</Link>}
-                                            {results.last_page > 1 && <nav aria-label="Search results pagination" className="flex items-center justify-between gap-3 rounded-2xl border border-[#d3c8b9] bg-[#fbf8f1]/90 p-2 shadow-sm"><PaginationLink href={results.prev_page_url} label="Previous page"><ArrowLeft className="size-4" /></PaginationLink><span className="font-serif text-sm whitespace-nowrap text-[#71695f]">Page {results.current_page} of {results.last_page}</span><PaginationLink href={results.next_page_url} label="Next page"><ArrowRight className="size-4" /></PaginationLink></nav>}
+                                        <div className="flex flex-wrap items-center justify-end">
+                                            {selectedBook && <Link href={`/search?q=${encodeURIComponent(queryWithoutBook)}&translation=${edition.slug}`} className="mr-4 font-serif text-sm text-[#8f542c] underline decoration-[#caa27f] underline-offset-4">Clear book filter</Link>}
+                                            {distribution && <div role="group" aria-label="Search result view" className="flex rounded-full border border-[#d3c8b9] bg-[#e9dfd1] p-1">
+                                                <button type="button" aria-pressed={resultsView === 'results'} onClick={() => setResultsView('results')} className={`inline-flex cursor-pointer items-center gap-2 rounded-full px-3 py-2 font-serif text-sm transition focus-visible:ring-2 focus-visible:ring-[#a95624] focus-visible:outline-none ${resultsView === 'results' ? 'bg-[#fffdf8] font-semibold shadow-sm' : 'text-[#71665a] hover:text-[#3c342c]'}`}><List className="size-4" /> Results</button>
+                                                <button type="button" aria-pressed={resultsView === 'distribution'} onClick={() => setResultsView('distribution')} className={`inline-flex cursor-pointer items-center gap-2 rounded-full px-3 py-2 font-serif text-sm transition focus-visible:ring-2 focus-visible:ring-[#a95624] focus-visible:outline-none ${resultsView === 'distribution' ? 'bg-[#fffdf8] font-semibold shadow-sm' : 'text-[#71665a] hover:text-[#3c342c]'}`}><BarChart3 className="size-4" /> Distribution</button>
+                                            </div>}
+                                            {results.last_page > 1 && <div aria-hidden={resultsView !== 'results'} inert={resultsView !== 'results'} className={`overflow-hidden transition-[max-width,margin] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${resultsView === 'results' ? 'ml-4 max-w-64 delay-0' : 'pointer-events-none ml-0 max-w-0 delay-150'}`}>
+                                                <nav aria-label="Search results pagination" className={`flex items-center justify-between gap-3 rounded-2xl border border-[#d3c8b9] bg-[#fbf8f1]/90 p-2 shadow-sm transition-opacity duration-150 ${resultsView === 'results' ? 'opacity-100 delay-300' : 'opacity-0 delay-0'}`}><PaginationLink href={results.prev_page_url} label="Previous page"><ArrowLeft className="size-4" /></PaginationLink><span className="font-serif text-sm whitespace-nowrap text-[#71695f]">Page {results.current_page} of {results.last_page}</span><PaginationLink href={results.next_page_url} label="Next page"><ArrowRight className="size-4" /></PaginationLink></nav>
+                                            </div>}
                                         </div>
                                     </div>
                                 </div>
-                                {results.data.length ? (
+                                {resultsView === 'distribution' && distribution ? (
+                                    <DistributionChart distribution={distribution} />
+                                ) : results.data.length ? (
                                     <div key={resultsAnimationKey} className="mt-5 grid gap-4 lg:grid-cols-2">
                                         {results.data.map((result, index) => result.kind === 'note' ? (
                                             <Link key={result.id} href={result.url} style={{ animationDelay: `${Math.min(index * 65, 650)}ms` }} className="search-result-enter group relative flex min-h-48 flex-col overflow-hidden rounded-2xl border border-[#c9c0d5] bg-[radial-gradient(circle_at_92%_12%,rgba(111,88,139,0.13),transparent_38%),linear-gradient(135deg,#f1edf5_0%,#fffdf9_62%,#eee8df_100%)] p-6 shadow-[0_14px_38px_-27px_rgba(57,43,72,0.65)] transition before:absolute before:top-[10%] before:bottom-[10%] before:left-0 before:w-1 before:rounded-full before:bg-[#806496] hover:border-[#a995ba] hover:shadow-[0_20px_48px_-25px_rgba(57,43,72,0.72)] focus-visible:ring-2 focus-visible:ring-[#806496] focus-visible:outline-none">
