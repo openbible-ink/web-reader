@@ -11,6 +11,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import CustomSelect from '@/components/custom-select';
 import NoteEditor from '@/components/note-editor';
+import NoteTagsInput from '@/components/note-tags-input';
 import SavedItemsPageShell from '@/components/saved-items-page-shell';
 import { loadScriptureSource } from '@/lib/scripture-source-cache';
 import type { BibleDocument, FlowNode } from 'usfm-parser';
@@ -29,7 +30,10 @@ interface NoteItem {
     editUrl: string;
     edition: { name: string; abbreviation: string };
     updatedAt?: string | null;
+    tags: Array<{ id: string; name: string; slug: string }>;
 }
+
+interface NoteTag { id: string; name: string; slug: string; notesCount: number }
 
 interface NoteBook {
     id: string;
@@ -83,10 +87,12 @@ function verseNumbers(nodes: FlowNode[]): string[] {
 
 function CreateNoteDrawer({
     books,
+    tagSuggestions,
     open,
     onClose,
 }: {
     books: NoteBook[];
+    tagSuggestions: string[];
     open: boolean;
     onClose: () => void;
 }) {
@@ -99,6 +105,7 @@ function CreateNoteDrawer({
     const [title, setTitle] = useState('');
     const [titleAutomatic, setTitleAutomatic] = useState(true);
     const [body, setBody] = useState('');
+    const [tags, setTags] = useState<string[]>([]);
     const [source, setSource] = useState('');
     const [sourceError, setSourceError] = useState<string>();
     const [saving, setSaving] = useState(false);
@@ -207,6 +214,7 @@ function CreateNoteDrawer({
                 verse_start: verseStart,
                 verse_end: isRange ? verseEnd : verseStart,
                 segments: [],
+                tags,
             },
             {
                 preserveScroll: true,
@@ -220,6 +228,7 @@ function CreateNoteDrawer({
                     setTitle('');
                     setTitleAutomatic(true);
                     setBody('');
+                    setTags([]);
                     onClose();
                 },
                 onError: (errors) =>
@@ -445,6 +454,7 @@ function CreateNoteDrawer({
                                 disabled={saving}
                             />
                         </div>
+                        <NoteTagsInput value={tags} onChange={setTags} suggestions={tagSuggestions} disabled={saving} />
                     </div>
                 </div>
                 <footer className="border-t border-[#e3dbcf] bg-[#faf7f1]/95 px-6 py-4 sm:px-8">
@@ -473,9 +483,13 @@ function excerpt(markdown: string): string {
 export default function Notes({
     notes,
     books,
+    tags,
+    activeTag,
 }: {
     notes: NoteItem[];
     books: NoteBook[];
+    tags: NoteTag[];
+    activeTag: string;
 }) {
     const [createOpen, setCreateOpen] = useState(false);
     const remove = (note: NoteItem) => {
@@ -511,6 +525,12 @@ export default function Notes({
                             </button>
                         </div>
                     </div>
+                    {tags.length > 0 && (
+                        <nav aria-label="Filter notes by tag" className="mt-7 flex flex-wrap gap-2">
+                            <Link href="/notes" preserveScroll className={`rounded-full border px-4 py-2 font-serif text-sm transition ${!activeTag ? 'border-[#80502f] bg-[#80502f] text-white' : 'border-[#d8cdbf] bg-[#fffaf3] text-[#665d53] hover:border-[#b99473]'}`}>All notes</Link>
+                            {tags.map((tag) => <Link key={tag.id} href={`/notes?tag=${encodeURIComponent(tag.slug)}`} preserveScroll className={`rounded-full border px-4 py-2 font-serif text-sm transition ${activeTag === tag.slug ? 'border-[#80502f] bg-[#80502f] text-white' : 'border-[#d8cdbf] bg-[#fffaf3] text-[#665d53] hover:border-[#b99473]'}`}>{tag.name} ({tag.notesCount})</Link>)}
+                        </nav>
+                    )}
                     {notes.length ? (
                         <div className="mt-9 grid gap-4 sm:grid-cols-2">
                             {notes.map((note) => (
@@ -542,6 +562,7 @@ export default function Notes({
                                         <p className="mt-3 line-clamp-4 font-serif leading-7 text-[#554f47]">
                                             {excerpt(note.bodyMarkdown)}
                                         </p>
+                                        {note.tags.length > 0 && <div className="mt-4 flex flex-wrap gap-1.5">{note.tags.map((tag) => <span key={tag.id} className="rounded-full bg-[#eee5d8] px-2.5 py-1 font-sans text-[0.68rem] text-[#684c30]">{tag.name}</span>)}</div>}
                                     </Link>
                                     <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-[#e7dfd4] pt-4">
                                         <span className="font-serif text-xs text-[#928a7e]">
@@ -617,8 +638,9 @@ export default function Notes({
                         </section>
                     )}
                 </main>
-                <CreateNoteDrawer
+            <CreateNoteDrawer
                     books={books}
+                tagSuggestions={tags.map((tag) => tag.name)}
                     open={createOpen}
                     onClose={() => setCreateOpen(false)}
                 />

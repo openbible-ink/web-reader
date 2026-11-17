@@ -48,6 +48,7 @@ import { parseUsfm } from 'usfm-parser';
 import { parseOeb, type OebVariantOptions } from 'usfm-parser/oeb';
 import { toast } from 'sonner';
 import NoteEditor from '@/components/note-editor';
+import NoteTagsInput from '@/components/note-tags-input';
 import CustomSelect from '@/components/custom-select';
 
 interface ScriptureArtwork {
@@ -160,9 +161,11 @@ interface ReaderProps {
     artworks?: ScriptureArtwork[];
     bookmarks?: ChapterBookmark[];
     focusedBookmark?: ChapterBookmark | null;
+    focusedPassage?: FocusedPassage | null;
     highlights?: ScriptureHighlight[];
     highlightLabels: Record<HighlightColor, string>;
     notes?: ScriptureNote[];
+    noteTags?: string[];
     focusedNoteId?: string | null;
     focusedNoteExpanded?: boolean;
 }
@@ -172,6 +175,12 @@ interface ChapterBookmark {
     title?: string | null;
     verseStart?: string | null;
     verseEnd?: string | null;
+}
+
+interface FocusedPassage {
+    label: string;
+    verseStart: string;
+    verseEnd: string;
 }
 
 type HighlightColor = 'yellow' | 'green' | 'blue' | 'rose';
@@ -205,6 +214,7 @@ interface ScriptureNote {
     verseStart?: string | null;
     verseEnd?: string | null;
     segments: HighlightSegment[];
+    tags: Array<{ id: string; name: string; slug: string }>;
 }
 
 interface NoteAnchor {
@@ -1173,9 +1183,11 @@ export default function Reader({
     artworks = [],
     bookmarks = [],
     focusedBookmark,
+    focusedPassage,
     highlights = [],
     highlightLabels,
     notes = [],
+    noteTags = [],
     focusedNoteId,
     focusedNoteExpanded = false,
 }: ReaderProps) {
@@ -1253,6 +1265,7 @@ export default function Reader({
     const [noteTitle, setNoteTitle] = useState('');
     const [noteTitleAutomatic, setNoteTitleAutomatic] = useState(true);
     const [noteBody, setNoteBody] = useState('');
+    const [noteTagNames, setNoteTagNames] = useState<string[]>([]);
     const [noteProcessing, setNoteProcessing] = useState(false);
     const [noteError, setNoteError] = useState<string>();
     const editionPreferencesRef = useRef<HTMLDivElement>(null);
@@ -1298,6 +1311,7 @@ export default function Reader({
             setNoteTitle(note.title);
             setNoteTitleAutomatic(false);
             setNoteBody(note.bodyMarkdown);
+            setNoteTagNames(note.tags.map((tag) => tag.name));
             setNoteError(undefined);
             setNoteMode('edit');
             setNoteExpanded(expanded);
@@ -1603,25 +1617,26 @@ export default function Reader({
         () => (document ? readingItems(chapterContent(document, chapter)) : []),
         [document, chapter],
     );
+    const focusedReference = focusedPassage ?? focusedBookmark;
     const content = useMemo(
         () =>
             focusedReadingItems(
                 fullContent,
-                focusedBookmark?.verseStart,
-                focusedBookmark?.verseEnd,
+                focusedReference?.verseStart,
+                focusedReference?.verseEnd,
             ),
-        [focusedBookmark, fullContent],
+        [focusedReference, fullContent],
     );
     const comparisonContent = useMemo(
         () =>
             comparisonDocument
                 ? focusedReadingItems(
                       readingItems(chapterContent(comparisonDocument, chapter)),
-                      focusedBookmark?.verseStart,
-                      focusedBookmark?.verseEnd,
+                      focusedReference?.verseStart,
+                      focusedReference?.verseEnd,
                   )
                 : [],
-        [chapter, comparisonDocument, focusedBookmark],
+        [chapter, comparisonDocument, focusedReference],
     );
     const alignedComparisonRows = useMemo(
         () => comparisonRows(content, comparisonContent),
@@ -2471,6 +2486,7 @@ export default function Reader({
         );
         setNoteTitleAutomatic(true);
         setNoteBody('');
+        setNoteTagNames([]);
         setNoteError(undefined);
         setNoteMode('create');
         setNoteExpanded(false);
@@ -2618,6 +2634,7 @@ export default function Reader({
                 prefix: segment.prefix,
                 suffix: segment.suffix,
             })),
+            tags: noteTagNames,
         };
         const options = {
             preserveScroll: true,
@@ -4056,6 +4073,35 @@ export default function Reader({
                             </div>
                         </div>
 
+                        {focusedPassage && (
+                            <div
+                                className={`sticky top-[5.4rem] z-20 -mx-2 flex flex-col gap-3 border-b px-3 py-4 font-sans backdrop-blur-[2px] sm:flex-row sm:items-center sm:justify-between ${readerDivider} ${readerHeaderSurface}`}
+                            >
+                                <div className="flex min-w-0 items-center gap-3">
+                                    <span className="grid size-9 shrink-0 place-items-center rounded-full bg-[color-mix(in_srgb,var(--reader-accent)_14%,transparent)] text-[var(--reader-accent)]">
+                                        <Search className="size-4" />
+                                    </span>
+                                    <div className="min-w-0">
+                                        <p className="font-serif font-semibold">
+                                            {focusedPassage.label}
+                                        </p>
+                                        <p
+                                            className={`font-sans text-xs ${readerMutedText}`}
+                                        >
+                                            Search result
+                                        </p>
+                                    </div>
+                                </div>
+                                <Link
+                                    href={`/read/${book.code}/${chapter}?translation=${edition.slug}#verse-${focusedPassage.verseStart}`}
+                                    className={`inline-flex shrink-0 items-center justify-center gap-2 self-start rounded-full border px-4 py-2 font-sans text-sm font-semibold sm:self-auto ${readerBorderedControl}`}
+                                >
+                                    <BookOpen className="size-4" />
+                                    Read in context
+                                </Link>
+                            </div>
+                        )}
+
                         {focusedBookmark?.verseStart && (
                             <div
                                 className={`flex flex-col gap-3 border-b px-1 py-4 sm:flex-row sm:items-center sm:justify-between ${readerDivider}`}
@@ -4090,7 +4136,7 @@ export default function Reader({
 
                         {comparison && (
                             <div
-                                className={`sticky top-[5.4rem] z-20 -mx-2 border-b px-2 py-3 font-sans backdrop-blur-[2px] ${readerDivider} ${readerHeaderSurface}`}
+                                className={`sticky z-20 -mx-2 border-b px-2 py-3 font-sans backdrop-blur-[2px] ${focusedPassage ? 'top-[12.75rem] sm:top-[9.65rem]' : 'top-[5.4rem]'} ${readerDivider} ${readerHeaderSurface}`}
                                 aria-label="Compared translations"
                             >
                                 <div
@@ -4212,7 +4258,9 @@ export default function Reader({
                                         )}
                                     {comparisonDocument && (
                                         <div className="relative">
-                                            <div className="pointer-events-none sticky top-[9.65rem] z-10 h-0 w-16">
+                                            <div
+                                                className={`pointer-events-none sticky z-10 h-0 w-16 ${focusedPassage ? 'top-[17rem] sm:top-[13.9rem]' : 'top-[9.65rem]'}`}
+                                            >
                                                 <span
                                                     className={`-mt-1 block font-serif leading-none text-[var(--reader-accent)] ${chapter.length >= 3 ? 'text-[2.75rem]' : 'text-[3.5rem]'}`}
                                                 >
@@ -4443,8 +4491,13 @@ export default function Reader({
                                         </div>
                                     ) : (
                                         <Fragment key={item.key}>
-                                            {item.number === '1' && (
-                                                <div className="pointer-events-none sticky top-[6.4rem] z-10 h-0 w-[4.5rem]">
+                                            {(item.number === '1' ||
+                                                (focusedPassage &&
+                                                    item.number ===
+                                                        focusedPassage.verseStart)) && (
+                                                <div
+                                                    className={`pointer-events-none sticky z-10 h-0 w-[4.5rem] ${focusedPassage ? 'top-[13.75rem] sm:top-[10.65rem]' : 'top-[6.4rem]'}`}
+                                                >
                                                     <span
                                                         className={`-mt-1 block font-serif leading-none text-[var(--reader-accent)] ${chapter.length >= 3 ? 'text-[2.75rem]' : 'text-[3.5rem]'}`}
                                                     >
@@ -4874,6 +4927,9 @@ export default function Reader({
                                                 <code>**bold**</code>, lists,
                                                 and quotes.
                                             </p>
+                                        </div>
+                                        <div className="mt-5">
+                                            <NoteTagsInput value={noteTagNames} onChange={setNoteTagNames} suggestions={noteTags} disabled={noteProcessing} />
                                         </div>
                                         {noteError && (
                                             <p

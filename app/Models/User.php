@@ -55,6 +55,12 @@ class User extends Authenticatable implements PasskeyUser
         return $this->hasMany(Note::class);
     }
 
+    /** @return HasMany<Tag, $this> */
+    public function tags(): HasMany
+    {
+        return $this->hasMany(Tag::class);
+    }
+
     /** @return HasMany<RecentPassage, $this> */
     public function recentPassages(): HasMany
     {

@@ -68,9 +68,11 @@ class IndexScriptureSearch extends Command
                         'canon_position' => $book->canon_position,
                         'chapter' => $verse['chapter'],
                         'verse' => $verse['verse'],
+                        'section_key' => $verse['sectionKey'] ?? null,
                         'section_title' => isset($verse['sectionTitle'])
                             ? mb_substr($verse['sectionTitle'], 0, 255)
                             : null,
+                        'footnote_text' => $verse['footnoteText'] ?? null,
                         'text' => $verse['text'],
                         'created_at' => $now,
                         'updated_at' => $now,

@@ -14,7 +14,9 @@ class ScriptureSearchVerse extends Model
         'canon_position',
         'chapter',
         'verse',
+        'section_key',
         'section_title',
+        'footnote_text',
         'text',
     ];
 

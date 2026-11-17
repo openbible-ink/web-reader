@@ -139,6 +139,44 @@ class NoteTest extends TestCase
         );
     }
 
+    public function test_user_can_tag_notes_and_filter_the_note_index(): void
+    {
+        $user = User::factory()->create();
+        $book = $this->book();
+        $base = [
+            'bible_book_id' => $book->id,
+            'chapter' => '1',
+            'anchor_type' => 'verse',
+            'body_markdown' => 'A tagged study note.',
+            'verse_start' => '1',
+            'verse_end' => '1',
+            'segments' => [],
+        ];
+
+        $this->actingAs($user)->post('/notes', [
+            ...$base,
+            'title' => 'Question about the Word',
+            'tags' => ['Questions', 'Christology'],
+        ])->assertSessionHasNoErrors();
+        $this->actingAs($user)->post('/notes', [
+            ...$base,
+            'title' => 'A separate observation',
+            'tags' => ['Observation'],
+        ])->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('tags', ['user_id' => $user->id, 'slug' => 'questions']);
+        $this->assertDatabaseCount('note_tag', 3);
+
+        $this->actingAs($user)->get('/notes?tag=questions')->assertOk()->assertInertia(
+            fn (Assert $page) => $page
+                ->where('activeTag', 'questions')
+                ->has('notes', 1)
+                ->where('notes.0.title', 'Question about the Word')
+                ->where('notes.0.tags.0.name', 'Christology')
+                ->has('tags', 3),
+        );
+    }
+
     public function test_section_notes_preserve_the_source_section_and_its_canonical_range(): void
     {
         $user = User::factory()->create();

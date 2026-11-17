@@ -56,6 +56,20 @@ class ReaderController extends Controller
         }
         $focusedNoteExpanded = (bool) $focusedNoteId && $request->boolean('fullscreen');
 
+        $focusedPassage = null;
+        $requestedVerses = $request->string('verses')->limit(32)->toString();
+        if ($requestedVerses !== '' && preg_match('/^(\d{1,3}[a-z]?)(?:-(\d{1,3}[a-z]?))?$/i', $requestedVerses, $verseMatch)) {
+            $verseStart = $verseMatch[1];
+            $verseEnd = $verseMatch[2] ?? $verseStart;
+            if ((int) $verseEnd >= (int) $verseStart) {
+                $focusedPassage = [
+                    'verseStart' => $verseStart,
+                    'verseEnd' => $verseEnd,
+                    'label' => $book->name.' '.$chapter.':'.$verseStart.($verseEnd !== $verseStart ? '–'.$verseEnd : ''),
+                ];
+            }
+        }
+
         $placements = ScriptureArtworkPassage::query()
             ->with('artwork')
             ->where('book_code', $book->book_code)
@@ -160,6 +174,7 @@ class ReaderController extends Controller
                 'verseStart' => $focusedBookmark->verse_start,
                 'verseEnd' => $focusedBookmark->verse_end,
             ] : null,
+            'focusedPassage' => $focusedPassage,
             'bookmarks' => $request->user()
                 ? $request->user()->bookmarks()
                     ->where(fn ($query) => $query
@@ -213,7 +228,7 @@ class ReaderController extends Controller
             'focusedNoteExpanded' => $focusedNoteExpanded,
             'notes' => $request->user()
                 ? $request->user()->notes()
-                    ->with('segments')
+                    ->with(['segments', 'tags'])
                     ->where(fn ($query) => $query
                         ->where('book_code', $book->book_code)
                         ->orWhere(fn ($legacy) => $legacy
@@ -235,6 +250,11 @@ class ReaderController extends Controller
                         'sectionTitle' => $note->section_title,
                         'verseStart' => $note->verse_start,
                         'verseEnd' => $note->verse_end,
+                        'tags' => $note->tags->map(fn ($tag) => [
+                            'id' => $tag->id,
+                            'name' => $tag->name,
+                            'slug' => $tag->slug,
+                        ])->values(),
                         'segments' => $note->segments->map(fn ($segment) => [
                             'verse' => $segment->verse,
                             'startOffset' => $segment->start_offset,
@@ -245,6 +265,9 @@ class ReaderController extends Controller
                         ])->values(),
                     ])
                     ->values()
+                : [],
+            'noteTags' => $request->user()
+                ? $request->user()->tags()->orderBy('name')->pluck('name')->values()
                 : [],
             'availableEditions' => $availableEditions,
             'defaultEditionSlug' => $defaultEdition?->slug ?? $edition->slug,

@@ -4,79 +4,489 @@ namespace App\Http\Controllers;
 
 use App\Models\BibleBook;
 use App\Models\BibleEdition;
+use App\Models\Note;
 use App\Models\ScriptureSearchVerse;
+use App\Support\CanonicalBookMetadata;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class SearchController extends Controller
 {
-    public function __invoke(Request $request): Response
+    public function __invoke(Request $request): Response|JsonResponse
     {
         $query = Str::of($request->string('q')->toString())->squish()->limit(160, '')->toString();
         $edition = $this->edition($request);
         $bookCode = strtoupper($request->string('book')->limit(12)->toString());
-        $reference = $query !== '' ? $this->reference($query, $edition) : null;
+        $books = $edition->books()->orderBy('canon_position')->get(['book_code', 'name', 'long_name', 'canon_position']);
+        $parsed = $this->parseSearchQuery($query, $books);
+        ['text' => $searchText, 'scopes' => $searchScopes, 'filters' => $searchFilters] = $parsed;
+        ['pattern' => $regex, 'error' => $regexError, 'wordAnchored' => $regexWordAnchored] = $this->compileRegex($searchText);
+        $tokenBookCodes = collect($searchFilters)->where('kind', 'book')->pluck('bookCode')->filter()->values();
+        $effectiveBookCodes = $tokenBookCodes->when($bookCode !== '', fn ($codes) => $codes->push($bookCode))->unique()->values();
+        $testaments = collect($searchFilters)->where('kind', 'testament')->pluck('value')->unique()->values();
+        $categoryBookCodes = collect($searchFilters)->where('kind', 'category')
+            ->flatMap(fn (array $filter) => CanonicalBookMetadata::bookCodesForCategory($filter['label']))->unique()->values();
+        $reference = $searchText !== '' ? $this->reference($searchText, $edition) : null;
         $results = null;
 
-        if ($query !== '' && $reference === null) {
-            $terms = collect(preg_split('/\s+/u', Str::lower($query)) ?: [])
-                ->filter(fn (string $term) => mb_strlen($term) >= 2)
-                ->unique()
-                ->take(8);
-            if ($terms->isEmpty()) {
-                $terms = collect([Str::lower($query)]);
-            }
+        if ($query !== '' && $reference === null && $regexError === null) {
+            $terms = $regex === null ? $this->searchTerms($searchText) : collect();
+            $columns = collect($searchScopes)->map(fn (string $scope) => match ($scope) {
+                'headings' => 'section_title',
+                'footnotes' => 'footnote_text',
+                default => 'text',
+            })->unique()->values();
 
-            $results = ScriptureSearchVerse::query()
-                ->where('edition_id', $edition->id)
-                ->when($bookCode !== '', fn (Builder $builder) => $builder->where('book_code', $bookCode))
-                ->when($terms->isNotEmpty(), function (Builder $builder) use ($terms): void {
-                    foreach ($terms as $term) {
-                        $builder->whereRaw('lower(text) like ?', ['%'.$this->escapeLike($term).'%']);
-                    }
-                })
-                ->orderByRaw('case when lower(text) like ? then 0 else 1 end', ['%'.$this->escapeLike(Str::lower($query)).'%'])
-                ->orderBy('canon_position')
-                ->orderByRaw('cast(chapter as integer)')
-                ->orderBy('verse')
-                ->paginate(12)
-                ->withQueryString()
-                ->through(fn (ScriptureSearchVerse $verse) => [
-                    'id' => $verse->id,
-                    'bookCode' => $verse->book_code,
-                    'bookName' => $verse->book_name,
-                    'chapter' => $verse->chapter,
-                    'verse' => $verse->verse,
-                    'sectionTitle' => $verse->section_title,
-                    'text' => $verse->text,
-                    'url' => route('reader.show', [
-                        'book' => $verse->book_code,
+            $results = in_array('notes', $searchScopes, true)
+                ? $this->noteSearchResults($request, $effectiveBookCodes, $testaments, $categoryBookCodes, $terms, $regex, $regexWordAnchored)
+                : (in_array('headings', $searchScopes, true) || $regex !== null
+                ? $this->aggregatedSearchResults($request, $edition, $effectiveBookCodes, $testaments, $categoryBookCodes, $terms, $searchScopes, $regex, $regexWordAnchored)
+                : ScriptureSearchVerse::query()
+                    ->where('edition_id', $edition->id)
+                    ->when($effectiveBookCodes->isNotEmpty(), fn (Builder $builder) => $builder->whereIn('book_code', $effectiveBookCodes))
+                    ->when($testaments->isNotEmpty(), fn (Builder $builder) => $builder->where(function (Builder $query) use ($testaments): void {
+                        if ($testaments->contains('old')) {
+                            $query->orWhereBetween('canon_position', [1, 39]);
+                        }
+                        if ($testaments->contains('new')) {
+                            $query->orWhere('canon_position', '>=', 40);
+                        }
+                    }))
+                    ->when($categoryBookCodes->isNotEmpty(), fn (Builder $builder) => $builder->whereIn('book_code', $categoryBookCodes))
+                    ->when($terms->isNotEmpty(), function (Builder $builder) use ($columns, $terms): void {
+                        foreach ($terms as $term) {
+                            $builder->where(function (Builder $match) use ($columns, $term): void {
+                                foreach ($columns as $column) {
+                                    $match->orWhereRaw("lower({$column}) like ?", ['%'.$this->escapeLike($term).'%']);
+                                }
+                            });
+                        }
+                    })
+                    ->when($terms->isEmpty(), function (Builder $builder) use ($columns): void {
+                        $builder->where(function (Builder $match) use ($columns): void {
+                            foreach ($columns as $column) {
+                                $match->orWhere(function (Builder $content) use ($column): void {
+                                    $content->whereNotNull($column)->where($column, '!=', '');
+                                });
+                            }
+                        });
+                    })
+                    ->when($searchText !== '', fn (Builder $builder) => $builder->orderByRaw(
+                        "case when lower(coalesce(text, '') || ' ' || coalesce(section_title, '') || ' ' || coalesce(footnote_text, '')) like ? then 0 else 1 end",
+                        ['%'.$this->escapeLike(Str::lower($searchText)).'%'],
+                    ))
+                    ->orderBy('canon_position')
+                    ->orderByRaw('cast(chapter as integer)')
+                    ->orderBy('verse')
+                    ->paginate(12)
+                    ->withQueryString()
+                    ->through(fn (ScriptureSearchVerse $verse) => [
+                        'id' => $verse->id,
+                        'bookCode' => $verse->book_code,
+                        'bookName' => $verse->book_name,
                         'chapter' => $verse->chapter,
-                        'translation' => $edition->slug,
-                    ], false).'#verse-'.$verse->verse,
-                ]);
+                        'verse' => $verse->verse,
+                        'sectionTitle' => $verse->section_title,
+                        'footnoteText' => $verse->footnote_text,
+                        'matchedIn' => collect([
+                            'verse' => $verse->text,
+                            'headings' => $verse->section_title,
+                            'footnotes' => $verse->footnote_text,
+                        ])->filter(fn (?string $value, string $scope) => in_array($scope, $searchScopes, true)
+                            && $value !== null
+                            && ($terms->isEmpty() || $terms->contains(fn (string $term) => str_contains(Str::lower($value), $term))))
+                            ->keys()->values()->all(),
+                        'text' => $verse->text,
+                        'url' => route('reader.show', [
+                            'book' => $verse->book_code,
+                            'chapter' => $verse->chapter,
+                            'translation' => $edition->slug,
+                        ], false).'#verse-'.$verse->verse,
+                    ]));
+        }
+
+        if ($request->boolean('quick')) {
+            return response()->json([
+                'props' => [
+                    'results' => $results,
+                    'reference' => $reference,
+                    'regexError' => $regexError,
+                ],
+            ]);
         }
 
         return Inertia::render('search', [
             'query' => $query,
+            'searchText' => $searchText,
+            'searchScopes' => $searchScopes,
+            'searchFilters' => $searchFilters,
+            'isRegex' => $regex !== null,
+            'regexError' => $regexError,
             'edition' => [
                 'slug' => $edition->slug,
                 'name' => $edition->name,
                 'abbreviation' => $edition->abbreviation,
             ],
             'editions' => BibleEdition::query()->whereHas('books')->orderBy('name')->get(['slug', 'name', 'abbreviation']),
-            'books' => $edition->books()->orderBy('canon_position')->get(['book_code', 'name'])->map(fn (BibleBook $book) => [
+            'books' => $books->map(fn (BibleBook $book) => [
                 'code' => $book->book_code,
                 'name' => $book->name,
+                'testament' => ($book->canon_position ?? 40) <= 39 ? 'old' : 'new',
+                'category' => CanonicalBookMetadata::category($book->book_code),
             ]),
-            'selectedBook' => $bookCode,
+            'categories' => CanonicalBookMetadata::categories(),
+            'selectedBook' => $effectiveBookCodes->first() ?? '',
             'reference' => $reference,
             'results' => $results,
             'indexReady' => ScriptureSearchVerse::query()->where('edition_id', $edition->id)->exists(),
         ]);
+    }
+
+    /** @param Collection<int, BibleBook> $books
+     * @return array{text: string, scopes: array<int, string>, filters: array<int, array<string, string>>}
+     */
+    private function parseSearchQuery(string $query, $books): array
+    {
+        preg_match_all('/(?:^|\s)in:(verse(?:-?text)?|headings?|sections?|footnotes?|notes?)(?=\s|$)/iu', $query, $matches);
+        $scopes = collect($matches[1] ?? [])->map(fn (string $scope) => match (Str::lower($scope)) {
+            'heading', 'headings', 'section', 'sections' => 'headings',
+            'footnote', 'footnotes' => 'footnotes',
+            'note', 'notes' => 'notes',
+            default => 'verse',
+        })->unique()->values()->all();
+
+        $filters = collect();
+        foreach ($scopes as $scope) {
+            $filters->push(['kind' => 'in', 'value' => $scope, 'label' => $scope]);
+        }
+
+        $remaining = preg_replace('/(?:^|\s)in:(?:verse(?:-?text)?|headings?|sections?|footnotes?|notes?)(?=\s|$)/iu', ' ', $query) ?? $query;
+        $remaining = preg_replace_callback('/(?:^|\s)(book|testament|category):([^\s]+)(?=\s|$)/iu', function (array $match) use ($books, $filters): string {
+            $kind = Str::lower($match[1]);
+            $value = Str::lower($match[2]);
+            if ($kind === 'book') {
+                $needle = Str::of($value)->replace('-', '')->replaceMatches('/[^a-z0-9]+/u', '')->toString();
+                $book = $books->first(fn (BibleBook $book) => collect([$book->book_code, $book->name, $book->long_name])
+                    ->filter()->contains(fn (string $name) => Str::of($name)->lower()->replaceMatches('/[^a-z0-9]+/u', '')->toString() === $needle)
+                    || $this->commonAlias($needle) === $book->book_code);
+                if (! $book) {
+                    return $match[0];
+                }
+                $filters->push(['kind' => 'book', 'value' => Str::slug($book->name), 'label' => $book->name, 'bookCode' => $book->book_code]);
+
+                return ' ';
+            }
+            if ($kind === 'testament') {
+                $canonical = match ($value) {
+                    'old', 'ot' => 'old', 'new', 'nt' => 'new', default => null
+                };
+                if (! $canonical) {
+                    return $match[0];
+                }
+                $filters->push(['kind' => 'testament', 'value' => $canonical, 'label' => $canonical === 'old' ? 'Old Testament' : 'New Testament']);
+
+                return ' ';
+            }
+            $category = collect(CanonicalBookMetadata::categories())->first(fn (string $category) => Str::slug($category) === Str::slug($value));
+            if (! $category) {
+                return $match[0];
+            }
+            $filters->push(['kind' => 'category', 'value' => Str::slug($category), 'label' => $category]);
+
+            return ' ';
+        }, $remaining) ?? $remaining;
+
+        return [
+            'text' => Str::of($remaining)->squish()->toString(),
+            'scopes' => $scopes ?: ['verse', 'headings', 'footnotes'],
+            'filters' => $filters->unique(fn (array $filter) => $filter['kind'].':'.$filter['value'])->values()->all(),
+        ];
+    }
+
+    private function noteSearchResults(Request $request, Collection $bookCodes, Collection $testaments, Collection $categoryBookCodes, Collection $terms, ?string $regex, bool $regexWordAnchored): LengthAwarePaginator
+    {
+        $notes = $request->user()
+            ? $request->user()->notes()->with(['book.edition', 'tags'])->latest('updated_at')->get()
+            : collect();
+
+        $notes = $notes
+            ->filter(function (Note $note) use ($bookCodes, $testaments, $categoryBookCodes, $terms, $regex, $regexWordAnchored): bool {
+                if ($bookCodes->isNotEmpty() && ! $bookCodes->contains($note->book_code)) {
+                    return false;
+                }
+                if ($categoryBookCodes->isNotEmpty() && ! $categoryBookCodes->contains($note->book_code)) {
+                    return false;
+                }
+                $canonPosition = $note->book->canon_position ?? 40;
+                if ($testaments->isNotEmpty()
+                    && ! ($testaments->contains('old') && $canonPosition <= 39)
+                    && ! ($testaments->contains('new') && $canonPosition >= 40)) {
+                    return false;
+                }
+
+                $haystack = Str::lower(implode(' ', [
+                    $note->title,
+                    $note->body_markdown,
+                    $note->section_title,
+                    $note->selected_text,
+                    $note->tags->pluck('name')->join(' '),
+                ]));
+
+                return $regex !== null
+                    ? $this->matchesRegex($haystack, $regex, $regexWordAnchored)
+                    : ($terms->isEmpty() || $terms->every(fn (string $term) => str_contains($haystack, $term)));
+            })
+            ->map(function (Note $note): array {
+                $bookName = $note->book->name;
+                $reference = "{$bookName} {$note->chapter}";
+                if ($note->verse_start) {
+                    $reference .= $note->chapter_end && $note->chapter_end !== $note->chapter
+                        ? ":{$note->verse_start}–{$note->chapter_end}:{$note->verse_end}"
+                        : ':'.($note->verse_start === $note->verse_end || ! $note->verse_end
+                            ? $note->verse_start
+                            : "{$note->verse_start}–{$note->verse_end}");
+                }
+                $plainText = Str::of($note->body_markdown)
+                    ->replaceMatches('/[#>*_\`\\[\\]()!-]+/u', ' ')
+                    ->squish()
+                    ->limit(220)
+                    ->toString();
+
+                return [
+                    'id' => 'note-'.$note->id,
+                    'kind' => 'note',
+                    'title' => $note->title,
+                    'bookCode' => $note->book_code,
+                    'bookName' => $bookName,
+                    'chapter' => $note->chapter,
+                    'verse' => $note->verse_start ?? '',
+                    'reference' => $reference,
+                    'sectionTitle' => $note->section_title,
+                    'footnoteText' => null,
+                    'matchedIn' => ['notes'],
+                    'text' => $plainText,
+                    'tags' => $note->tags->map(fn ($tag) => [
+                        'id' => $tag->id,
+                        'name' => $tag->name,
+                        'slug' => $tag->slug,
+                    ])->values()->all(),
+                    'url' => route('notes.show', $note, false),
+                ];
+            })
+            ->values();
+
+        $page = LengthAwarePaginator::resolveCurrentPage();
+
+        return new LengthAwarePaginator(
+            $notes->forPage($page, 12)->values(),
+            $notes->count(),
+            12,
+            $page,
+            ['path' => $request->url(), 'query' => $request->query()],
+        );
+    }
+
+    private function aggregatedSearchResults(Request $request, BibleEdition $edition, $bookCodes, $testaments, $categoryBookCodes, $terms, array $searchScopes, ?string $regex = null, bool $regexWordAnchored = false): LengthAwarePaginator
+    {
+        $columns = collect($searchScopes)->map(fn (string $scope) => match ($scope) {
+            'headings' => 'section_title',
+            'footnotes' => 'footnote_text',
+            default => 'text',
+        })->unique()->values();
+        $rows = ScriptureSearchVerse::query()
+            ->where('edition_id', $edition->id)
+            ->when($bookCodes->isNotEmpty(), fn (Builder $builder) => $builder->whereIn('book_code', $bookCodes))
+            ->when($testaments->isNotEmpty(), fn (Builder $builder) => $builder->where(function (Builder $query) use ($testaments): void {
+                if ($testaments->contains('old')) {
+                    $query->orWhereBetween('canon_position', [1, 39]);
+                }
+                if ($testaments->contains('new')) {
+                    $query->orWhere('canon_position', '>=', 40);
+                }
+            }))
+            ->when($categoryBookCodes->isNotEmpty(), fn (Builder $builder) => $builder->whereIn('book_code', $categoryBookCodes))
+            ->when($terms->isNotEmpty(), function (Builder $builder) use ($columns, $terms): void {
+                foreach ($terms as $term) {
+                    $builder->where(function (Builder $match) use ($columns, $term): void {
+                        foreach ($columns as $column) {
+                            $match->orWhereRaw("lower({$column}) like ?", ['%'.$this->escapeLike($term).'%']);
+                        }
+                    });
+                }
+            })
+            ->when($terms->isEmpty(), function (Builder $builder) use ($columns): void {
+                $builder->where(function (Builder $match) use ($columns): void {
+                    foreach ($columns as $column) {
+                        $match->orWhere(function (Builder $content) use ($column): void {
+                            $content->whereNotNull($column)->where($column, '!=', '');
+                        });
+                    }
+                });
+            })
+            ->orderBy('canon_position')
+            ->orderByRaw('cast(chapter as integer)')
+            ->get()
+            ->sort(fn (ScriptureSearchVerse $left, ScriptureSearchVerse $right) => ($left->canon_position <=> $right->canon_position)
+                ?: ((int) $left->chapter <=> (int) $right->chapter)
+                ?: strnatcasecmp($left->verse, $right->verse));
+
+        $matchesAll = fn (?string $value): bool => $value !== null
+            && $value !== ''
+            && ($regex !== null
+                ? $this->matchesRegex($value, $regex, $regexWordAnchored)
+                : ($terms->isEmpty() || $terms->every(fn (string $term) => str_contains(Str::lower($value), $term))));
+        $sectionGroups = $rows->groupBy(fn (ScriptureSearchVerse $verse) => implode('|', [
+            $verse->book_code,
+            $verse->chapter,
+            $verse->section_key ?: Str::slug($verse->section_title ?? ''),
+        ]));
+        $seenSections = [];
+        $results = collect();
+
+        foreach ($rows as $verse) {
+            $sectionKey = implode('|', [
+                $verse->book_code,
+                $verse->chapter,
+                $verse->section_key ?: Str::slug($verse->section_title ?? ''),
+            ]);
+            $headingMatches = in_array('headings', $searchScopes, true) && $matchesAll($verse->section_title);
+
+            if ($headingMatches && ! isset($seenSections[$sectionKey])) {
+                $seenSections[$sectionKey] = true;
+                $ordered = $sectionGroups->get($sectionKey)
+                    ->sort(fn (ScriptureSearchVerse $left, ScriptureSearchVerse $right) => strnatcasecmp($left->verse, $right->verse))
+                    ->values();
+                /** @var ScriptureSearchVerse $first */
+                $first = $ordered->first();
+                /** @var ScriptureSearchVerse $last */
+                $last = $ordered->last();
+                $verseRange = $first->verse === $last->verse ? $first->verse : $first->verse.'–'.$last->verse;
+
+                $results->push([
+                    'id' => 'section-'.$first->id,
+                    'kind' => 'section',
+                    'bookCode' => $first->book_code,
+                    'bookName' => $first->book_name,
+                    'chapter' => $first->chapter,
+                    'verse' => $first->verse,
+                    'verseStart' => $first->verse,
+                    'verseEnd' => $last->verse,
+                    'sectionTitle' => $first->section_title,
+                    'footnoteText' => null,
+                    'matchedIn' => ['headings'],
+                    'text' => '',
+                    'reference' => $first->book_name.' '.$first->chapter.':'.$verseRange,
+                    'url' => route('reader.show', [
+                        'book' => $first->book_code,
+                        'chapter' => $first->chapter,
+                        'translation' => $edition->slug,
+                        'verses' => $first->verse.($first->verse === $last->verse ? '' : '-'.$last->verse),
+                    ], false),
+                ]);
+            }
+
+            $nonHeadingValues = collect([
+                in_array('verse', $searchScopes, true) ? $verse->text : null,
+                in_array('footnotes', $searchScopes, true) ? $verse->footnote_text : null,
+            ])->filter();
+            $nonHeadingMatches = $nonHeadingValues->contains(fn (string $value) => $matchesAll($value));
+            if (! $nonHeadingMatches && $headingMatches) {
+                continue;
+            }
+            if (! $headingMatches && ! $nonHeadingMatches) {
+                continue;
+            }
+
+            $results->push([
+                'id' => $verse->id,
+                'kind' => 'verse',
+                'bookCode' => $verse->book_code,
+                'bookName' => $verse->book_name,
+                'chapter' => $verse->chapter,
+                'verse' => $verse->verse,
+                'sectionTitle' => $verse->section_title,
+                'footnoteText' => $verse->footnote_text,
+                'matchedIn' => collect([
+                    'verse' => $verse->text,
+                    'headings' => $verse->section_title,
+                    'footnotes' => $verse->footnote_text,
+                ])->filter(fn (?string $value, string $scope) => in_array($scope, $searchScopes, true) && $matchesAll($value))
+                    ->keys()->values()->all(),
+                'text' => $verse->text,
+                'url' => route('reader.show', [
+                    'book' => $verse->book_code,
+                    'chapter' => $verse->chapter,
+                    'translation' => $edition->slug,
+                ], false).'#verse-'.$verse->verse,
+            ]);
+        }
+
+        $page = LengthAwarePaginator::resolveCurrentPage();
+
+        return new LengthAwarePaginator(
+            $results->forPage($page, 12)->values(),
+            $results->count(),
+            12,
+            $page,
+            ['path' => $request->url(), 'query' => $request->query()],
+        );
+    }
+
+    /** @return array{pattern: string|null, error: string|null, wordAnchored: bool} */
+    private function compileRegex(string $searchText): array
+    {
+        if (mb_strlen($searchText) < 3 || ! str_starts_with($searchText, '/') || ! str_ends_with($searchText, '/')) {
+            return ['pattern' => null, 'error' => null, 'wordAnchored' => false];
+        }
+
+        $body = substr($searchText, 1, -1);
+        if ($body === '') {
+            return ['pattern' => null, 'error' => 'Enter a pattern between the forward slashes.', 'wordAnchored' => false];
+        }
+
+        $pattern = '~(*LIMIT_MATCH=100000)(*LIMIT_RECURSION=10000)(?:'.str_replace('~', '\\~', $body).')~iu';
+        if (@preg_match($pattern, '') === false) {
+            return ['pattern' => null, 'error' => 'This regular expression is not valid. Check its brackets and escape characters.', 'wordAnchored' => false];
+        }
+
+        return [
+            'pattern' => $pattern,
+            'error' => null,
+            'wordAnchored' => str_starts_with($body, '^') && str_ends_with($body, '$') && preg_match('/\s/u', $body) !== 1,
+        ];
+    }
+
+    /** @return Collection<int, string> */
+    private function searchTerms(string $searchText): Collection
+    {
+        preg_match_all('/["“]([^"”]+)["”]|([^\s]+)/u', Str::lower($searchText), $matches, PREG_SET_ORDER);
+
+        return collect($matches)
+            ->map(fn (array $match) => trim(($match[1] ?? '') !== '' ? $match[1] : ($match[2] ?? '')))
+            ->filter(fn (string $term) => mb_strlen($term) >= 2)
+            ->unique()
+            ->take(8)
+            ->values();
+    }
+
+    private function matchesRegex(string $value, string $pattern, bool $wordAnchored): bool
+    {
+        if (preg_match($pattern, $value) === 1) {
+            return true;
+        }
+        if (! $wordAnchored) {
+            return false;
+        }
+
+        return collect(preg_split('/[^\p{L}\p{N}\p{M}]+/u', $value) ?: [])
+            ->filter()
+            ->contains(fn (string $word) => preg_match($pattern, $word) === 1);
     }
 
     private function edition(Request $request): BibleEdition
@@ -96,7 +506,7 @@ class SearchController extends Controller
     /** @return array<string, mixed>|null */
     private function reference(string $query, BibleEdition $edition): ?array
     {
-        if (! preg_match('/^(.+?)\s+(\d{1,3})(?:\s*:\s*(\d{1,3}[a-z]?)(?:\s*[-–—]\s*(\d{1,3}[a-z]?))?)?$/iu', $query, $match)) {
+        if (! preg_match('/^(.+?)\s+(\d{1,3})(?:(?:\s*:\s*|\s+)(\d{1,3}[a-z]?)(?:(?:\s*[-–—]\s*|\s+)(\d{1,3}[a-z]?))?)?$/iu', $query, $match)) {
             return null;
         }
 
@@ -113,10 +523,19 @@ class SearchController extends Controller
 
         $start = $match[3] ?? null;
         $end = $match[4] ?? null;
-        $url = route('reader.show', ['book' => $book->book_code, 'chapter' => $match[2], 'translation' => $edition->slug], false);
-        if ($start) {
-            $url .= '#verse-'.$start;
+        if ($start && $end && (int) $end < (int) $start) {
+            return null;
         }
+
+        $parameters = [
+            'book' => $book->book_code,
+            'chapter' => $match[2],
+            'translation' => $edition->slug,
+        ];
+        if ($start) {
+            $parameters['verses'] = $start.($end ? '-'.$end : '');
+        }
+        $url = route('reader.show', $parameters, false);
 
         return [
             'bookCode' => $book->book_code,

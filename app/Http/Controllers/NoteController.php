@@ -4,9 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Models\BibleBook;
 use App\Models\Note;
+use App\Models\Tag;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -16,11 +18,24 @@ class NoteController extends Controller
 {
     public function index(Request $request): Response
     {
+        $activeTag = Str::slug($request->string('tag')->limit(48)->toString());
         $notes = $request->user()->notes()
-            ->with(['book.edition', 'segments'])
+            ->with(['book.edition', 'segments', 'tags'])
+            ->when($activeTag !== '', fn ($query) => $query->whereHas('tags', fn ($tags) => $tags->where('slug', $activeTag)))
             ->latest('updated_at')
             ->get()
             ->map(fn (Note $note) => $this->serialize($note));
+
+        $tags = $request->user()->tags()
+            ->withCount('notes')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (Tag $tag) => [
+                'id' => $tag->id,
+                'name' => $tag->name,
+                'slug' => $tag->slug,
+                'notesCount' => $tag->notes_count,
+            ]);
 
         $books = BibleBook::query()
             ->with('edition')
@@ -45,13 +60,15 @@ class NoteController extends Controller
         return Inertia::render('notes', [
             'notes' => $notes,
             'books' => $books,
+            'tags' => $tags,
+            'activeTag' => $activeTag,
         ]);
     }
 
     public function show(Request $request, Note $note): Response
     {
         $this->authorizeOwner($request, $note);
-        $note->load(['book.edition', 'segments']);
+        $note->load(['book.edition', 'segments', 'tags']);
 
         /** @var BibleBook $book */
         $book = $note->book;
@@ -71,6 +88,7 @@ class NoteController extends Controller
                 'reference' => $this->reference($book->name, $note),
                 'attachmentLabel' => $note->section_title ?: $this->reference($book->name, $note),
                 'updatedAt' => $note->updated_at?->toISOString(),
+                'tags' => $this->serializeTags($note),
             ],
             'edition' => [
                 'slug' => $book->edition->slug,
@@ -104,6 +122,7 @@ class NoteController extends Controller
         DB::transaction(function () use ($request, $data): void {
             $note = $request->user()->notes()->create($this->attributes($data));
             $this->replaceSegments($note, $data['segments'] ?? []);
+            $this->syncTags($request, $note, $data['tags'] ?? []);
         });
 
         return back();
@@ -114,9 +133,10 @@ class NoteController extends Controller
         $this->authorizeOwner($request, $note);
         $data = $this->validated($request);
 
-        DB::transaction(function () use ($note, $data): void {
+        DB::transaction(function () use ($request, $note, $data): void {
             $note->update($this->attributes($data));
             $this->replaceSegments($note, $data['segments'] ?? []);
+            $this->syncTags($request, $note, $data['tags'] ?? []);
         });
 
         return back();
@@ -152,6 +172,8 @@ class NoteController extends Controller
             'segments.*.exact_text' => ['required', 'string', 'max:10000'],
             'segments.*.prefix' => ['nullable', 'string', 'max:64'],
             'segments.*.suffix' => ['nullable', 'string', 'max:64'],
+            'tags' => ['array', 'max:12'],
+            'tags.*' => ['string', 'max:40'],
         ]);
 
         $endChapter = $data['chapter_end'] ?? $data['chapter'];
@@ -184,7 +206,7 @@ class NoteController extends Controller
         abort_unless(is_string($bookCode), 404);
 
         return [
-            ...collect($data)->except('segments')->all(),
+            ...collect($data)->except(['segments', 'tags'])->all(),
             'book_code' => $bookCode,
         ];
     }
@@ -201,6 +223,28 @@ class NoteController extends Controller
                 'position' => $position,
             ],
         )->all());
+    }
+
+    /** @param array<int, string> $names */
+    private function syncTags(Request $request, Note $note, array $names): void
+    {
+        $tagIds = collect($names)
+            ->map(fn (string $name) => trim($name))
+            ->filter()
+            ->unique(fn (string $name) => Str::lower($name))
+            ->take(12)
+            ->map(function (string $name) use ($request): string {
+                $slug = Str::slug($name);
+                $tag = $request->user()->tags()->firstOrCreate(
+                    ['slug' => $slug],
+                    ['name' => $name],
+                );
+
+                return $tag->id;
+            });
+
+        $note->tags()->sync($tagIds);
+        $request->user()->tags()->doesntHave('notes')->delete();
     }
 
     private function authorizeOwner(Request $request, Note $note): void
@@ -237,7 +281,18 @@ class NoteController extends Controller
                 'fullscreen' => 1,
             ], absolute: false),
             'updatedAt' => $note->updated_at?->toISOString(),
+            'tags' => $this->serializeTags($note),
         ];
+    }
+
+    /** @return array<int, array{id: string, name: string, slug: string}> */
+    private function serializeTags(Note $note): array
+    {
+        return $note->tags->map(fn (Tag $tag) => [
+            'id' => $tag->id,
+            'name' => $tag->name,
+            'slug' => $tag->slug,
+        ])->values()->all();
     }
 
     private function reference(string $bookName, Note $note): string
