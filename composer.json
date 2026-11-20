@@ -64,10 +64,10 @@
         "ci:check": [
             "Composer\\Config::disableProcessTimeout",
             "npm run check",
+            "npm run build",
             "@test",
             "npm run audit:dependencies",
             "composer audit --locked --no-dev",
-            "npm run build",
             "npm run performance:check",
             "npm run audit:scripture"
         ],
