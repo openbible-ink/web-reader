@@ -34,7 +34,8 @@ function BookShelf({
 
     useLayoutEffect(() => {
         if (
-            window.sessionStorage.getItem('book-transition-return') !== 'true' ||
+            window.sessionStorage.getItem('book-transition-return') !==
+                'true' ||
             !transitioningBook
         ) {
             return;
@@ -66,14 +67,19 @@ function BookShelf({
         <section aria-labelledby={headingId} className="min-w-0">
             <div className="flex items-end justify-between gap-6 px-6 sm:px-10 lg:px-14">
                 <div>
-                    <h2 id={headingId} className="font-serif text-3xl font-bold tracking-tight sm:text-4xl">
+                    <h2
+                        id={headingId}
+                        className="font-serif text-3xl font-bold tracking-tight sm:text-4xl"
+                    >
                         {label}
                     </h2>
                     <p className="mt-2 max-w-xl text-sm leading-relaxed text-stone-600 sm:text-base">
                         {description}
                     </p>
                 </div>
-                <div className={`${books.length > 1 ? 'hidden sm:flex' : 'hidden'} shrink-0 items-center gap-0.5 rounded-full bg-[#e7ddcf] p-1`}>
+                <div
+                    className={`${books.length > 1 ? 'hidden sm:flex' : 'hidden'} shrink-0 items-center gap-0.5 rounded-full bg-[#e7ddcf] p-1`}
+                >
                     <button
                         type="button"
                         onClick={() => scroll(-1)}
@@ -95,7 +101,7 @@ function BookShelf({
 
             <div
                 ref={trackRef}
-                tabIndex={0}
+                role="region"
                 aria-label={`${label} books`}
                 className="mt-2 flex snap-x snap-mandatory scroll-ps-6 gap-4 overflow-x-auto px-6 py-7 sm:scroll-ps-10 sm:px-10 lg:scroll-ps-14 lg:px-14 [scrollbar-width:none] focus-visible:outline-none [&::-webkit-scrollbar]:hidden"
             >
@@ -106,7 +112,8 @@ function BookShelf({
                         ? {
                               backgroundColor: gradient.backgroundColor,
                               backgroundImage: `url('${metadata.artworkUrl}')`,
-                              backgroundPosition: metadata.artworkPosition ?? 'center',
+                              backgroundPosition:
+                                  metadata.artworkPosition ?? 'center',
                           }
                         : {
                               backgroundColor: gradient.backgroundColor,
@@ -133,7 +140,10 @@ function BookShelf({
                                 className="absolute inset-0 bg-cover transition-transform duration-700 ease-out group-hover:scale-[1.035]"
                                 style={visualStyle}
                             />
-                            <span aria-hidden="true" className="absolute inset-0 bg-[linear-gradient(180deg,rgba(20,18,14,0.02)_20%,rgba(20,18,14,0.26)_55%,rgba(20,18,14,0.92)_100%)]" />
+                            <span
+                                aria-hidden="true"
+                                className="absolute inset-0 bg-[linear-gradient(180deg,rgba(20,18,14,0.02)_20%,rgba(20,18,14,0.26)_55%,rgba(20,18,14,0.92)_100%)]"
+                            />
                             <span
                                 style={{
                                     viewTransitionName:
@@ -186,7 +196,9 @@ function BookShelf({
 
 export default function Books({ books }: BooksProps) {
     const [query, setQuery] = useState('');
-    const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+    const [selectedCategory, setSelectedCategory] = useState<string | null>(
+        null,
+    );
     const [transitioningBook, setTransitioningBook] = useState<string | null>(
         () =>
             typeof window === 'undefined'
@@ -194,7 +206,14 @@ export default function Books({ books }: BooksProps) {
                 : window.sessionStorage.getItem('book-transition-code'),
     );
     const categories = useMemo(
-        () => Array.from(new Set(books.map((book) => getCanonicalBookMetadata(book.code).category))),
+        () =>
+            Array.from(
+                new Set(
+                    books.map(
+                        (book) => getCanonicalBookMetadata(book.code).category,
+                    ),
+                ),
+            ),
         [books],
     );
     const filteredBooks = useMemo(() => {
@@ -202,14 +221,21 @@ export default function Books({ books }: BooksProps) {
 
         return books.filter((book) => {
             const metadata = getCanonicalBookMetadata(book.code);
-            const matchesName = !normalisedQuery || book.name.toLocaleLowerCase().includes(normalisedQuery);
-            const matchesCategory = !selectedCategory || metadata.category === selectedCategory;
+            const matchesName =
+                !normalisedQuery ||
+                book.name.toLocaleLowerCase().includes(normalisedQuery);
+            const matchesCategory =
+                !selectedCategory || metadata.category === selectedCategory;
 
             return matchesName && matchesCategory;
         });
     }, [books, query, selectedCategory]);
-    const oldTestament = filteredBooks.filter((book) => book.testament === 'old');
-    const newTestament = filteredBooks.filter((book) => book.testament === 'new');
+    const oldTestament = filteredBooks.filter(
+        (book) => book.testament === 'old',
+    );
+    const newTestament = filteredBooks.filter(
+        (book) => book.testament === 'new',
+    );
     const beginBookTransition = (bookCode: string) => {
         window.sessionStorage.removeItem('book-transition-return');
         window.sessionStorage.setItem('book-transition-code', bookCode);
@@ -218,7 +244,9 @@ export default function Books({ books }: BooksProps) {
     };
 
     useLayoutEffect(() => {
-        if (window.sessionStorage.getItem('book-transition-return') !== 'true') {
+        if (
+            window.sessionStorage.getItem('book-transition-return') !== 'true'
+        ) {
             return;
         }
 
@@ -237,27 +265,46 @@ export default function Books({ books }: BooksProps) {
             <SavedItemsPageShell active="read">
                 <main className="min-h-[calc(100svh-5rem)] overflow-hidden bg-[#f4efe5] py-12 text-[#25221e] lg:min-h-svh lg:py-14">
                     <header className="px-6 sm:px-10 lg:px-14">
-                        <p className="text-xs font-semibold tracking-[0.28em] uppercase">Library</p>
-                        <h1 className="mt-2 font-serif text-6xl font-black tracking-[-0.045em] sm:text-7xl">Books</h1>
+                        <p className="text-xs font-semibold tracking-[0.28em] uppercase">
+                            Library
+                        </p>
+                        <h1 className="mt-2 font-serif text-6xl font-black tracking-[-0.045em] sm:text-7xl">
+                            Books
+                        </h1>
                         <p className="mt-4 max-w-2xl text-base leading-relaxed text-stone-600 sm:text-lg">
-                            Move through the library one book at a time, from ancient beginnings to the vision of all things made new.
+                            Move through the library one book at a time, from
+                            ancient beginnings to the vision of all things made
+                            new.
                         </p>
 
                         <div className="mt-9 max-w-4xl">
                             <div className="relative max-w-xl">
-                                <Search aria-hidden="true" className="pointer-events-none absolute top-1/2 left-5 size-5 -translate-y-1/2 text-stone-500" />
-                                <label htmlFor="book-search" className="sr-only">Search books by name</label>
+                                <Search
+                                    aria-hidden="true"
+                                    className="pointer-events-none absolute top-1/2 left-5 size-5 -translate-y-1/2 text-stone-500"
+                                />
+                                <label
+                                    htmlFor="book-search"
+                                    className="sr-only"
+                                >
+                                    Search books by name
+                                </label>
                                 <input
                                     id="book-search"
                                     type="search"
                                     value={query}
-                                    onChange={(event) => setQuery(event.target.value)}
+                                    onChange={(event) =>
+                                        setQuery(event.target.value)
+                                    }
                                     placeholder="Search books…"
                                     className="h-14 w-full rounded-full border border-[#d7cdbf] bg-[#fffdf8]/80 pr-5 pl-13 text-base text-stone-900 shadow-sm outline-none transition placeholder:text-stone-500 focus:border-[#a95624] focus:ring-3 focus:ring-[#a95624]/15"
                                 />
                             </div>
 
-                            <div aria-label="Filter books by category" className="mt-4 flex flex-wrap gap-2">
+                            <div
+                                aria-label="Filter books by category"
+                                className="mt-4 flex flex-wrap gap-2"
+                            >
                                 <button
                                     type="button"
                                     onClick={() => setSelectedCategory(null)}
@@ -274,8 +321,16 @@ export default function Books({ books }: BooksProps) {
                                     <button
                                         key={category}
                                         type="button"
-                                        onClick={() => setSelectedCategory((current) => current === category ? null : category)}
-                                        aria-pressed={selectedCategory === category}
+                                        onClick={() =>
+                                            setSelectedCategory((current) =>
+                                                current === category
+                                                    ? null
+                                                    : category,
+                                            )
+                                        }
+                                        aria-pressed={
+                                            selectedCategory === category
+                                        }
                                         className={`cursor-pointer rounded-full border px-4 py-2 text-sm font-medium transition focus-visible:ring-2 focus-visible:ring-[#a95624]/45 focus-visible:outline-none ${
                                             selectedCategory === category
                                                 ? 'border-[#9f5428] bg-[#9f5428] text-white'

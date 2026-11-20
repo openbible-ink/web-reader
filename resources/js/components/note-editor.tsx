@@ -79,8 +79,7 @@ export default function NoteEditor({
         if (!editor) return;
 
         const existingUrl = editor.getAttributes('link').href as
-            | string
-            | undefined;
+            string | undefined;
         const url = window.prompt('Link URL', existingUrl ?? 'https://');
         if (url === null) return;
 

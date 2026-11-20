@@ -17,8 +17,11 @@ class HighlightLabelController extends Controller
             'labels.rose' => ['nullable', 'string', 'max:48'],
         ]);
 
+        /** @var array<string, string|null> $labels */
+        $labels = $data['labels'];
+
         $request->user()->update([
-            'highlight_colour_labels' => collect($data['labels'])
+            'highlight_colour_labels' => collect($labels)
                 ->map(fn (?string $label): string => trim($label ?? ''))
                 ->all(),
         ]);

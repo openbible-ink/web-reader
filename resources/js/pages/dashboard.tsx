@@ -811,15 +811,19 @@ export default function Dashboard({
                                                 <CustomSelect
                                                     label="Default translation"
                                                     value={defaultEditionSlug}
-                                                    options={availableEditions.map((available) => ({
-                                                        value: available.slug,
-                                                        label: `${available.name} (${available.abbreviation})`,
-                                                    }))}
+                                                    options={availableEditions.map(
+                                                        (available) => ({
+                                                            value: available.slug,
+                                                            label: `${available.name} (${available.abbreviation})`,
+                                                        }),
+                                                    )}
                                                     onChange={(translation) =>
                                                         router.patch(
                                                             '/settings/default-translation',
                                                             { translation },
-                                                            { preserveScroll: true },
+                                                            {
+                                                                preserveScroll: true,
+                                                            },
                                                         )
                                                     }
                                                     className="mt-1"
@@ -880,7 +884,8 @@ export default function Dashboard({
                                                 Words of Jesus
                                             </p>
                                             <p className="mt-0.5 text-xs leading-5 text-[#6f685f]">
-                                                Use red lettering where the translation provides it.
+                                                Use red lettering where the
+                                                translation provides it.
                                             </p>
                                         </div>
                                         <button
@@ -911,7 +916,10 @@ export default function Dashboard({
                                                     Highlight labels
                                                 </h3>
                                                 <p className="mt-1 max-w-md font-serif text-xs leading-5 text-[#6f685f]">
-                                                    Give each colour a personal meaning. These labels appear when choosing and reviewing highlights.
+                                                    Give each colour a personal
+                                                    meaning. These labels appear
+                                                    when choosing and reviewing
+                                                    highlights.
                                                 </p>
                                             </div>
                                         </div>

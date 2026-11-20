@@ -17,10 +17,7 @@ const category = (
     );
 
 /** Canonical editorial metadata shared by every translation and edition. */
-export const CANONICAL_BOOK_METADATA: Record<
-    string,
-    CanonicalBookMetadata
-> = {
+export const CANONICAL_BOOK_METADATA: Record<string, CanonicalBookMetadata> = {
     ...category('Pentateuch', {
         GEN: 'The story of creation, covenant, and the beginnings of the people of Israel.',
         EXO: 'Israel is delivered from slavery and formed into a covenant people.',
@@ -119,7 +116,8 @@ export function getCanonicalBookMetadata(
     return (
         CANONICAL_BOOK_METADATA[bookCode.toUpperCase()] ?? {
             category: 'Scripture',
-            description: 'Explore this book’s story, teaching, poetry, and enduring themes.',
+            description:
+                'Explore this book’s story, teaching, poetry, and enduring themes.',
         }
     );
 }

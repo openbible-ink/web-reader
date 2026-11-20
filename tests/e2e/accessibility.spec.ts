@@ -17,7 +17,9 @@ async function signIn(page: Page) {
     await expect(page).toHaveURL(/\/dashboard/);
 }
 
-test('public reader passes an automated accessibility scan', async ({ page }) => {
+test('public reader passes an automated accessibility scan', async ({
+    page,
+}) => {
     await page.goto('/read/JHN/1');
     await expect(page.getByText('In the beginning the Word was')).toBeVisible();
     await expectAccessible(page);
@@ -31,7 +33,9 @@ test('translation comparison passes an automated accessibility scan', async ({
     await expectAccessible(page);
 });
 
-test('authentication pages pass automated accessibility scans', async ({ page }) => {
+test('authentication pages pass automated accessibility scans', async ({
+    page,
+}) => {
     await page.goto('/login');
     await expectAccessible(page);
 
@@ -39,14 +43,18 @@ test('authentication pages pass automated accessibility scans', async ({ page })
     await expectAccessible(page);
 });
 
-test('authenticated dashboard passes an automated accessibility scan', async ({ page }) => {
+test('authenticated dashboard passes an automated accessibility scan', async ({
+    page,
+}) => {
     await signIn(page);
     await expectAccessible(page);
 });
 
 test('reader panels close with Escape and restore focus', async ({ page }) => {
     await page.goto('/read/JHN/1');
-    const appearance = page.getByRole('button', { name: 'Typography settings' });
+    const appearance = page.getByRole('button', {
+        name: 'Typography settings',
+    });
     await appearance.focus();
     await appearance.press('Enter');
     await expect(page.getByText('Reading appearance')).toBeVisible();

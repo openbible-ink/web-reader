@@ -4,10 +4,11 @@ namespace Database\Seeders;
 
 use App\Models\BibleBook;
 use App\Models\BibleEdition;
-use App\Services\OebLibrary;
 use App\Models\User;
+use App\Services\OebLibrary;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\File;
+use RuntimeException;
 
 class EndToEndSeeder extends Seeder
 {
@@ -73,13 +74,17 @@ class EndToEndSeeder extends Seeder
             ]);
             $webSource = File::get($webSourcePath);
             preg_match_all('/^\\\\c\s+([0-9]+)/m', $webSource, $webChapters);
+            $webChapterNumbers = array_map('intval', $webChapters[1]);
+            if ($webChapterNumbers === []) {
+                throw new RuntimeException('The WEB John fixture has no chapters.');
+            }
 
             $web->books()->create([
                 'book_code' => 'JHN',
                 'name' => 'John',
                 'long_name' => 'The Good News According to John',
                 'source_path' => '/bibles/webp/43-JHN.usfm',
-                'chapter_count' => max(array_map('intval', $webChapters[1])),
+                'chapter_count' => max($webChapterNumbers),
                 'canon_position' => 43,
             ]);
         }

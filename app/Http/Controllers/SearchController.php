@@ -6,12 +6,14 @@ use App\Models\BibleBook;
 use App\Models\BibleEdition;
 use App\Models\Note;
 use App\Models\ScriptureSearchVerse;
+use App\Models\User;
 use App\Support\CanonicalBookMetadata;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -64,7 +66,7 @@ class SearchController extends Controller
                         foreach ($terms as $term) {
                             $builder->where(function (Builder $match) use ($columns, $term): void {
                                 foreach ($columns as $column) {
-                                    $match->orWhereRaw("lower({$column}) like ?", ['%'.$this->escapeLike($term).'%']);
+                                    $this->addColumnTerm($match, $column, $term);
                                 }
                             });
                         }
@@ -73,7 +75,7 @@ class SearchController extends Controller
                         $builder->where(function (Builder $match) use ($columns): void {
                             foreach ($columns as $column) {
                                 $match->orWhere(function (Builder $content) use ($column): void {
-                                    $content->whereNotNull($column)->where($column, '!=', '');
+                                    $this->addNonemptyColumn($content, $column);
                                 });
                             }
                         });
@@ -265,7 +267,7 @@ class SearchController extends Controller
     private function parseSearchQuery(string $query, $books): array
     {
         preg_match_all('/(?:^|\s)in:(verse(?:-?text)?|headings?|sections?|footnotes?|notes?)(?=\s|$)/iu', $query, $matches);
-        $scopes = collect($matches[1] ?? [])->map(fn (string $scope) => match (Str::lower($scope)) {
+        $scopes = collect($matches[1])->map(fn (string $scope) => match (Str::lower($scope)) {
             'heading', 'headings', 'section', 'sections' => 'headings',
             'footnote', 'footnotes' => 'footnotes',
             'note', 'notes' => 'notes',
@@ -320,6 +322,13 @@ class SearchController extends Controller
         ];
     }
 
+    /**
+     * @param  Collection<int, string>  $bookCodes
+     * @param  Collection<int, string>  $testaments
+     * @param  Collection<int, string>  $categoryBookCodes
+     * @param  Collection<int, string>  $terms
+     * @return LengthAwarePaginator<int, array<string, mixed>>
+     */
     private function noteSearchResults(Request $request, Collection $bookCodes, Collection $testaments, Collection $categoryBookCodes, Collection $terms, ?string $regex, bool $regexWordAnchored): LengthAwarePaginator
     {
         $notes = $request->user()
@@ -353,43 +362,7 @@ class SearchController extends Controller
                     ? $this->matchesRegex($haystack, $regex, $regexWordAnchored)
                     : ($terms->isEmpty() || $terms->every(fn (string $term) => str_contains($haystack, $term)));
             })
-            ->map(function (Note $note): array {
-                $bookName = $note->book->name;
-                $reference = "{$bookName} {$note->chapter}";
-                if ($note->verse_start) {
-                    $reference .= $note->chapter_end && $note->chapter_end !== $note->chapter
-                        ? ":{$note->verse_start}–{$note->chapter_end}:{$note->verse_end}"
-                        : ':'.($note->verse_start === $note->verse_end || ! $note->verse_end
-                            ? $note->verse_start
-                            : "{$note->verse_start}–{$note->verse_end}");
-                }
-                $plainText = Str::of($note->body_markdown)
-                    ->replaceMatches('/[#>*_\`\\[\\]()!-]+/u', ' ')
-                    ->squish()
-                    ->limit(220)
-                    ->toString();
-
-                return [
-                    'id' => 'note-'.$note->id,
-                    'kind' => 'note',
-                    'title' => $note->title,
-                    'bookCode' => $note->book_code,
-                    'bookName' => $bookName,
-                    'chapter' => $note->chapter,
-                    'verse' => $note->verse_start ?? '',
-                    'reference' => $reference,
-                    'sectionTitle' => $note->section_title,
-                    'footnoteText' => null,
-                    'matchedIn' => ['notes'],
-                    'text' => $plainText,
-                    'tags' => $note->tags->map(fn ($tag) => [
-                        'id' => $tag->id,
-                        'name' => $tag->name,
-                        'slug' => $tag->slug,
-                    ])->values()->all(),
-                    'url' => route('notes.show', $note, false),
-                ];
-            })
+            ->map(fn (Note $note): array => $this->serializeNoteSearchResult($note))
             ->values();
 
         $page = LengthAwarePaginator::resolveCurrentPage();
@@ -403,7 +376,15 @@ class SearchController extends Controller
         );
     }
 
-    private function aggregatedSearchResults(Request $request, BibleEdition $edition, $bookCodes, $testaments, $categoryBookCodes, $terms, array $searchScopes, ?string $regex = null, bool $regexWordAnchored = false): LengthAwarePaginator
+    /**
+     * @param  Collection<int, string>  $bookCodes
+     * @param  Collection<int, string>  $testaments
+     * @param  Collection<int, string>  $categoryBookCodes
+     * @param  Collection<int, string>  $terms
+     * @param  array<int, string>  $searchScopes
+     * @return LengthAwarePaginator<int, array<string, mixed>>
+     */
+    private function aggregatedSearchResults(Request $request, BibleEdition $edition, Collection $bookCodes, Collection $testaments, Collection $categoryBookCodes, Collection $terms, array $searchScopes, ?string $regex = null, bool $regexWordAnchored = false): LengthAwarePaginator
     {
         $columns = collect($searchScopes)->map(fn (string $scope) => match ($scope) {
             'headings' => 'section_title',
@@ -426,7 +407,7 @@ class SearchController extends Controller
                 foreach ($terms as $term) {
                     $builder->where(function (Builder $match) use ($columns, $term): void {
                         foreach ($columns as $column) {
-                            $match->orWhereRaw("lower({$column}) like ?", ['%'.$this->escapeLike($term).'%']);
+                            $this->addColumnTerm($match, $column, $term);
                         }
                     });
                 }
@@ -435,7 +416,7 @@ class SearchController extends Controller
                 $builder->where(function (Builder $match) use ($columns): void {
                     foreach ($columns as $column) {
                         $match->orWhere(function (Builder $content) use ($column): void {
-                            $content->whereNotNull($column)->where($column, '!=', '');
+                            $this->addNonemptyColumn($content, $column);
                         });
                     }
                 });
@@ -573,7 +554,7 @@ class SearchController extends Controller
         ];
     }
 
-    /** @return Collection<int, string> */
+    /** @return Collection<int, non-falsy-string> */
     private function searchTerms(string $searchText): Collection
     {
         preg_match_all('/["“]([^"”]+)["”]|([^\s]+)/u', Str::lower($searchText), $matches, PREG_SET_ORDER);
@@ -583,7 +564,8 @@ class SearchController extends Controller
             ->filter(fn (string $term) => mb_strlen($term) >= 2)
             ->unique()
             ->take(8)
-            ->values();
+            ->values()
+            ->map(fn (string $term): string => $term);
     }
 
     private function matchesRegex(string $value, string $pattern, bool $wordAnchored): bool
@@ -610,8 +592,15 @@ class SearchController extends Controller
             }
         }
 
-        return $request->user()?->preferredEdition
-            ?? BibleEdition::query()->where('slug', 'oeb')->firstOrFail();
+        $user = Auth::user();
+        if ($user instanceof User) {
+            $preferredEdition = BibleEdition::query()->whereKey($user->preferred_edition_id)->first();
+            if ($preferredEdition !== null) {
+                return $preferredEdition;
+            }
+        }
+
+        return BibleEdition::query()->where('slug', 'oeb')->firstOrFail();
     }
 
     /** @return array<string, mixed>|null */
@@ -673,5 +662,67 @@ class SearchController extends Controller
     private function escapeLike(string $value): string
     {
         return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value);
+    }
+
+    /** @param Builder<ScriptureSearchVerse> $query */
+    private function addColumnTerm(Builder $query, string $column, string $term): void
+    {
+        $value = '%'.$this->escapeLike($term).'%';
+
+        match ($column) {
+            'section_title' => $query->orWhereRaw('lower(section_title) like ?', [$value]),
+            'footnote_text' => $query->orWhereRaw('lower(footnote_text) like ?', [$value]),
+            default => $query->orWhereRaw('lower(text) like ?', [$value]),
+        };
+    }
+
+    /** @param Builder<ScriptureSearchVerse> $query */
+    private function addNonemptyColumn(Builder $query, string $column): void
+    {
+        match ($column) {
+            'section_title' => $query->whereNotNull('section_title')->where('section_title', '!=', ''),
+            'footnote_text' => $query->whereNotNull('footnote_text')->where('footnote_text', '!=', ''),
+            default => $query->whereNotNull('text')->where('text', '!=', ''),
+        };
+    }
+
+    /** @return array<string, mixed> */
+    private function serializeNoteSearchResult(Note $note): array
+    {
+        $bookName = $note->book->name;
+        $reference = "{$bookName} {$note->chapter}";
+        if ($note->verse_start) {
+            $reference .= $note->chapter_end && $note->chapter_end !== $note->chapter
+                ? ":{$note->verse_start}–{$note->chapter_end}:{$note->verse_end}"
+                : ':'.($note->verse_start === $note->verse_end || ! $note->verse_end
+                    ? $note->verse_start
+                    : "{$note->verse_start}–{$note->verse_end}");
+        }
+        $plainText = Str::of($note->body_markdown)
+            ->replaceMatches('/[#>*_\`\\[\\]()!-]+/u', ' ')
+            ->squish()
+            ->limit(220)
+            ->toString();
+
+        return [
+            'id' => 'note-'.$note->id,
+            'kind' => 'note',
+            'title' => $note->title,
+            'bookCode' => $note->book_code,
+            'bookName' => $bookName,
+            'chapter' => $note->chapter,
+            'verse' => $note->verse_start ?? '',
+            'reference' => $reference,
+            'sectionTitle' => $note->section_title,
+            'footnoteText' => null,
+            'matchedIn' => ['notes'],
+            'text' => $plainText,
+            'tags' => $note->tags->map(fn ($tag) => [
+                'id' => $tag->id,
+                'name' => $tag->name,
+                'slug' => $tag->slug,
+            ])->values()->all(),
+            'url' => route('notes.show', $note, false),
+        ];
     }
 }

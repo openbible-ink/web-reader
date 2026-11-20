@@ -87,9 +87,7 @@ export default function BookOverview({
             beginReadingTransition();
             router.visit(href, {
                 viewTransition: (transition) => {
-                    void transition.finished.finally(
-                        finishReadingTransition,
-                    );
+                    void transition.finished.finally(finishReadingTransition);
                 },
             });
         } catch {
@@ -105,12 +103,28 @@ export default function BookOverview({
         <>
             <Head title={title}>
                 <meta head-key="robots" name="robots" content="index,follow" />
-                <meta head-key="description" name="description" content={description} />
-                <link head-key="canonical" rel="canonical" href={canonicalUrl} />
+                <meta
+                    head-key="description"
+                    name="description"
+                    content={description}
+                />
+                <link
+                    head-key="canonical"
+                    rel="canonical"
+                    href={canonicalUrl}
+                />
                 <meta head-key="og:type" property="og:type" content="book" />
                 <meta head-key="og:title" property="og:title" content={title} />
-                <meta head-key="og:description" property="og:description" content={description} />
-                <meta head-key="og:url" property="og:url" content={canonicalUrl} />
+                <meta
+                    head-key="og:description"
+                    property="og:description"
+                    content={description}
+                />
+                <meta
+                    head-key="og:url"
+                    property="og:url"
+                    content={canonicalUrl}
+                />
             </Head>
             <SavedItemsPageShell active="read">
                 <main className="grid min-h-[calc(100svh-5rem)] place-items-center bg-[#f4efe5] px-6 py-10 text-[#25221e] lg:min-h-svh">
@@ -123,7 +137,10 @@ export default function BookOverview({
                             className="absolute inset-0 bg-cover"
                             style={visualStyle}
                         />
-                        <span aria-hidden="true" className="absolute inset-0 bg-[linear-gradient(180deg,rgba(20,18,14,0.12)_5%,rgba(20,18,14,0.42)_48%,rgba(20,18,14,0.78)_100%)]" />
+                        <span
+                            aria-hidden="true"
+                            className="absolute inset-0 bg-[linear-gradient(180deg,rgba(20,18,14,0.12)_5%,rgba(20,18,14,0.42)_48%,rgba(20,18,14,0.78)_100%)]"
+                        />
 
                         <div className="relative z-10 p-9 sm:p-14">
                             <div className="flex items-center gap-3">
@@ -147,7 +164,9 @@ export default function BookOverview({
                                     <ArrowLeft className="size-4" />
                                 </Link>
                                 <p
-                                    style={{ viewTransitionName: 'book-category' }}
+                                    style={{
+                                        viewTransitionName: 'book-category',
+                                    }}
                                     className="rounded-full bg-black/25 px-3 py-1.5 text-[0.67rem] font-semibold tracking-[0.24em] text-[#fff4e7] uppercase shadow-sm backdrop-blur-[2px]"
                                 >
                                     {metadata.category}
@@ -161,79 +180,82 @@ export default function BookOverview({
                                 {book.name}
                             </h1>
                             <p
-                                style={{ viewTransitionName: 'book-description' }}
+                                style={{
+                                    viewTransitionName: 'book-description',
+                                }}
                                 className="mt-5 max-w-lg text-base leading-relaxed text-white/82 sm:text-lg"
                             >
                                 {metadata.description}
                             </p>
 
                             <div className="mt-9 rounded-[1.5rem] border border-white/35 bg-[#fffaf1]/92 p-6 text-[#25221e] shadow-[0_18px_45px_-30px_rgba(0,0,0,0.75)] backdrop-blur-md sm:p-8">
-                            {selectionStep === 'chapter' ? (
-                                <section aria-labelledby="chapter-picker-heading">
-                                    <h2
-                                        id="chapter-picker-heading"
-                                        className="font-serif text-xl font-semibold"
-                                    >
-                                        Chapter
-                                    </h2>
-                                    <div className="mt-4 grid grid-cols-6 gap-2 sm:grid-cols-10">
-                                        {chapterNumbers.map((chapter) => (
-                                            <button
-                                                key={chapter}
-                                                type="button"
-                                                aria-pressed={
-                                                    selectedChapter === chapter
-                                                }
-                                                onClick={() =>
-                                                    chooseChapter(chapter)
-                                                }
-                                                className={`grid aspect-square w-full cursor-pointer place-items-center rounded-lg font-serif text-base font-semibold tabular-nums transition focus-visible:ring-2 focus-visible:ring-[#a95624]/45 focus-visible:outline-none ${selectedChapter === chapter ? 'bg-[#a95624] text-white shadow-sm' : 'bg-[#e9dfd1] text-stone-800 hover:bg-[#d9c5ad]'}`}
-                                            >
-                                                {chapter}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </section>
-                            ) : (
-                                <section aria-labelledby="verse-picker-heading">
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            type="button"
-                                            aria-label="Return to chapter selection"
-                                            onClick={() =>
-                                                setSelectionStep('chapter')
-                                            }
-                                            className="grid size-8 cursor-pointer place-items-center rounded-full text-stone-600 transition hover:bg-[#e9dfd1] hover:text-stone-900 focus-visible:ring-2 focus-visible:ring-[#a95624]/45 focus-visible:outline-none"
-                                        >
-                                            <ArrowLeft className="size-4" />
-                                        </button>
+                                {selectionStep === 'chapter' ? (
+                                    <section aria-labelledby="chapter-picker-heading">
                                         <h2
-                                            id="verse-picker-heading"
+                                            id="chapter-picker-heading"
                                             className="font-serif text-xl font-semibold"
                                         >
-                                            Verse
+                                            Chapter
                                         </h2>
-                                    </div>
-                                    <div className="mt-4 grid max-h-[18.5rem] grid-cols-6 gap-2 overflow-y-auto pe-1 pb-1 sm:grid-cols-10">
-                                        {verseNumbers.map((verse) => (
+                                        <div className="mt-4 grid grid-cols-6 gap-2 sm:grid-cols-10">
+                                            {chapterNumbers.map((chapter) => (
+                                                <button
+                                                    key={chapter}
+                                                    type="button"
+                                                    aria-pressed={
+                                                        selectedChapter ===
+                                                        chapter
+                                                    }
+                                                    onClick={() =>
+                                                        chooseChapter(chapter)
+                                                    }
+                                                    className={`grid aspect-square w-full cursor-pointer place-items-center rounded-lg font-serif text-base font-semibold tabular-nums transition focus-visible:ring-2 focus-visible:ring-[#a95624]/45 focus-visible:outline-none ${selectedChapter === chapter ? 'bg-[#a95624] text-white shadow-sm' : 'bg-[#e9dfd1] text-stone-800 hover:bg-[#d9c5ad]'}`}
+                                                >
+                                                    {chapter}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </section>
+                                ) : (
+                                    <section aria-labelledby="verse-picker-heading">
+                                        <div className="flex items-center gap-2">
                                             <button
-                                                key={verse}
                                                 type="button"
-                                                aria-pressed={
-                                                    selectedVerse === verse
-                                                }
-                                                disabled={openingReader}
+                                                aria-label="Return to chapter selection"
                                                 onClick={() =>
-                                                    chooseVerse(verse)
+                                                    setSelectionStep('chapter')
                                                 }
-                                                className={`grid aspect-square w-full cursor-pointer place-items-center rounded-lg font-serif text-base font-semibold tabular-nums transition focus-visible:ring-2 focus-visible:ring-[#a95624]/45 focus-visible:outline-none disabled:cursor-wait disabled:opacity-70 ${selectedVerse === verse ? 'bg-[#a95624] text-white shadow-sm' : 'bg-[#e9dfd1] text-stone-800 hover:bg-[#d9c5ad]'}`}
+                                                className="grid size-8 cursor-pointer place-items-center rounded-full text-stone-600 transition hover:bg-[#e9dfd1] hover:text-stone-900 focus-visible:ring-2 focus-visible:ring-[#a95624]/45 focus-visible:outline-none"
                                             >
-                                                {verse}
+                                                <ArrowLeft className="size-4" />
                                             </button>
-                                        ))}
-                                    </div>
-                                </section>
-                            )}
+                                            <h2
+                                                id="verse-picker-heading"
+                                                className="font-serif text-xl font-semibold"
+                                            >
+                                                Verse
+                                            </h2>
+                                        </div>
+                                        <div className="mt-4 grid max-h-[18.5rem] grid-cols-6 gap-2 overflow-y-auto pe-1 pb-1 sm:grid-cols-10">
+                                            {verseNumbers.map((verse) => (
+                                                <button
+                                                    key={verse}
+                                                    type="button"
+                                                    aria-pressed={
+                                                        selectedVerse === verse
+                                                    }
+                                                    disabled={openingReader}
+                                                    onClick={() =>
+                                                        chooseVerse(verse)
+                                                    }
+                                                    className={`grid aspect-square w-full cursor-pointer place-items-center rounded-lg font-serif text-base font-semibold tabular-nums transition focus-visible:ring-2 focus-visible:ring-[#a95624]/45 focus-visible:outline-none disabled:cursor-wait disabled:opacity-70 ${selectedVerse === verse ? 'bg-[#a95624] text-white shadow-sm' : 'bg-[#e9dfd1] text-stone-800 hover:bg-[#d9c5ad]'}`}
+                                                >
+                                                    {verse}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </section>
+                                )}
                                 <button
                                     type="button"
                                     disabled={openingReader}

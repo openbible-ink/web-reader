@@ -60,7 +60,7 @@ class DashboardController extends Controller
                     'name' => $edition->name,
                     'abbreviation' => $edition->abbreviation,
                 ]),
-            'defaultEditionSlug' => $request->user()->preferredEdition?->slug
+            'defaultEditionSlug' => BibleEdition::query()->whereKey($request->user()->preferred_edition_id)->value('slug')
                 ?? BibleEdition::query()->where('slug', 'oeb')->value('slug'),
             'highlightLabels' => HighlightLabels::forUser($request->user()),
             'redLetterWords' => (bool) $request->user()->red_letter_words,

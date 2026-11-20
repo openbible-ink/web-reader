@@ -53,10 +53,7 @@ export default function Highlights({
     );
     const highlightLabel = (colour: HighlightColour) =>
         highlightLabels[colour]?.trim() || colours[colour].label;
-    const loadHighlights = (
-        colour: HighlightColour | null,
-        page = 1,
-    ) => {
+    const loadHighlights = (colour: HighlightColour | null, page = 1) => {
         router.get(
             '/highlights',
             {
@@ -192,56 +189,61 @@ export default function Highlights({
                                                         {highlight.reference}
                                                     </h2>
                                                     <blockquote className="mt-1 line-clamp-2 font-serif text-base leading-6 text-[#5d564d] sm:text-lg sm:leading-7">
-                                                        “{highlight.selectedText}”
+                                                        “
+                                                        {highlight.selectedText}
+                                                        ”
                                                     </blockquote>
                                                 </Link>
                                                 <span
                                                     className="shrink-0 rounded-full border border-[#ded5c9] bg-[#f6f0e7] px-3 py-1 font-sans text-[0.68rem] font-semibold tracking-[0.08em] text-[#6e655a] uppercase"
-                                                    title={highlight.edition.name}
+                                                    title={
+                                                        highlight.edition.name
+                                                    }
                                                 >
-                                                    {highlight.edition.abbreviation}
+                                                    {
+                                                        highlight.edition
+                                                            .abbreviation
+                                                    }
                                                 </span>
                                             </div>
                                         </div>
                                         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e6ded2] bg-[#f7f1e8]/65 px-5 py-3 sm:px-6">
                                             <fieldset className="flex items-center gap-2">
-                                                        <legend className="sr-only">
-                                                            Highlight colour
-                                                        </legend>
-                                                        {Object.entries(
-                                                            colours,
-                                                        ).map(
-                                                            ([key, option]) => (
-                                                                <button
-                                                                    key={key}
-                                                                    type="button"
-                                                                    onClick={() =>
-                                                                        recolour(
-                                                                            highlight,
-                                                                            key as HighlightColour,
-                                                                        )
-                                                                    }
-                                                                    className="size-7 cursor-pointer rounded-full border-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#211f1b]"
-                                                                    style={{
-                                                                        backgroundColor:
-                                                                            option.wash,
-                                                                        borderColor:
-                                                                            key ===
-                                                                            highlight.color
-                                                                                ? option.swatch
-                                                                                : 'transparent',
-                                                                    }}
-                                                                    aria-label={`Change ${highlight.reference} highlight to ${highlightLabel(key as HighlightColour)}`}
-                                                                    title={highlightLabel(
-                                                                        key as HighlightColour,
-                                                                    )}
-                                                                    aria-pressed={
-                                                                        key ===
-                                                                        highlight.color
-                                                                    }
-                                                                />
-                                                            ),
-                                                        )}
+                                                <legend className="sr-only">
+                                                    Highlight colour
+                                                </legend>
+                                                {Object.entries(colours).map(
+                                                    ([key, option]) => (
+                                                        <button
+                                                            key={key}
+                                                            type="button"
+                                                            onClick={() =>
+                                                                recolour(
+                                                                    highlight,
+                                                                    key as HighlightColour,
+                                                                )
+                                                            }
+                                                            className="size-7 cursor-pointer rounded-full border-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#211f1b]"
+                                                            style={{
+                                                                backgroundColor:
+                                                                    option.wash,
+                                                                borderColor:
+                                                                    key ===
+                                                                    highlight.color
+                                                                        ? option.swatch
+                                                                        : 'transparent',
+                                                            }}
+                                                            aria-label={`Change ${highlight.reference} highlight to ${highlightLabel(key as HighlightColour)}`}
+                                                            title={highlightLabel(
+                                                                key as HighlightColour,
+                                                            )}
+                                                            aria-pressed={
+                                                                key ===
+                                                                highlight.color
+                                                            }
+                                                        />
+                                                    ),
+                                                )}
                                             </fieldset>
                                             <button
                                                 type="button"

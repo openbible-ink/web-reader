@@ -1,6 +1,7 @@
 import { Check, ChevronDown } from 'lucide-react';
 import {
     type KeyboardEvent,
+    useCallback,
     useEffect,
     useId,
     useLayoutEffect,
@@ -103,7 +104,7 @@ export default function CustomSelect<Value extends string = string>({
         },
     }[theme];
 
-    const updatePosition = () => {
+    const updatePosition = useCallback(() => {
         const rect = buttonRef.current?.getBoundingClientRect();
         if (!rect) return;
         const width = Math.max(
@@ -118,7 +119,7 @@ export default function CustomSelect<Value extends string = string>({
             top: rect.bottom + 8,
             width,
         });
-    };
+    }, [layout]);
 
     useLayoutEffect(() => {
         if (!open) return;
@@ -127,7 +128,7 @@ export default function CustomSelect<Value extends string = string>({
             (option) => option.value === value,
         );
         setActiveIndex(Math.max(0, selectedIndex));
-    }, [open, value]);
+    }, [open, options, updatePosition, value]);
 
     useEffect(() => {
         if (!open) return;
@@ -150,7 +151,7 @@ export default function CustomSelect<Value extends string = string>({
             window.removeEventListener('resize', reposition);
             window.removeEventListener('scroll', reposition, true);
         };
-    }, [open]);
+    }, [open, updatePosition]);
 
     const choose = (option: SelectOption<Value>) => {
         onChange(option.value);

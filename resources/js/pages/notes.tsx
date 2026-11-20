@@ -8,7 +8,7 @@ import {
     Trash2,
     X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import CustomSelect from '@/components/custom-select';
 import NoteEditor from '@/components/note-editor';
 import NoteTagsInput from '@/components/note-tags-input';
@@ -33,7 +33,12 @@ interface NoteItem {
     tags: Array<{ id: string; name: string; slug: string }>;
 }
 
-interface NoteTag { id: string; name: string; slug: string; notesCount: number }
+interface NoteTag {
+    id: string;
+    name: string;
+    slug: string;
+    notesCount: number;
+}
 
 interface NoteBook {
     id: string;
@@ -111,13 +116,13 @@ function CreateNoteDrawer({
     const [saving, setSaving] = useState(false);
     const book = books.find((item) => item.id === bookId);
 
-    const close = () => {
+    const close = useCallback(() => {
         setClosing(true);
         window.setTimeout(() => {
             setClosing(false);
             onClose();
         }, 280);
-    };
+    }, [onClose]);
 
     useEffect(() => {
         if (!open) return;
@@ -126,7 +131,7 @@ function CreateNoteDrawer({
         };
         window.addEventListener('keydown', dismiss);
         return () => window.removeEventListener('keydown', dismiss);
-    }, [open]);
+    }, [close, open]);
 
     useEffect(() => {
         if (!book) {
@@ -272,8 +277,8 @@ function CreateNoteDrawer({
                 </header>
                 <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-8">
                     <div className="grid gap-5">
-                        <label className="grid gap-1.5 font-sans text-xs font-semibold tracking-wide text-stone-500 uppercase">
-                            Book
+                        <div className="grid gap-1.5 font-sans text-xs font-semibold tracking-wide text-stone-500 uppercase">
+                            <span>Book</span>
                             <CustomSelect
                                 label="Book"
                                 value={bookId}
@@ -291,14 +296,14 @@ function CreateNoteDrawer({
                                 }))}
                                 triggerClassName="min-h-[52px] px-4 font-serif text-base font-normal tracking-normal normal-case"
                             />
-                        </label>
+                        </div>
                         <fieldset className="rounded-2xl border border-[#e3dbcf] bg-[#faf7f1] p-4">
                             <legend className="px-2 font-sans text-xs font-semibold tracking-[0.14em] text-stone-500 uppercase">
                                 Start verse
                             </legend>
                             <div className="grid gap-4 sm:grid-cols-2">
-                                <label className="grid gap-1.5 font-sans text-xs font-semibold tracking-wide text-stone-500 uppercase">
-                                    Chapter
+                                <div className="grid gap-1.5 font-sans text-xs font-semibold tracking-wide text-stone-500 uppercase">
+                                    <span>Chapter</span>
                                     <CustomSelect
                                         label="Start chapter"
                                         value={chapter}
@@ -320,9 +325,9 @@ function CreateNoteDrawer({
                                         )}
                                         triggerClassName="min-h-[52px] px-4 font-serif text-base font-normal tracking-normal normal-case"
                                     />
-                                </label>
-                                <label className="grid gap-1.5 font-sans text-xs font-semibold tracking-wide text-stone-500 uppercase">
-                                    Verse
+                                </div>
+                                <div className="grid gap-1.5 font-sans text-xs font-semibold tracking-wide text-stone-500 uppercase">
+                                    <span>Verse</span>
                                     <CustomSelect
                                         label="Verse"
                                         value={verseStart}
@@ -344,7 +349,7 @@ function CreateNoteDrawer({
                                         }))}
                                         triggerClassName="min-h-[52px] px-4 font-serif text-base font-normal tracking-normal normal-case"
                                     />
-                                </label>
+                                </div>
                             </div>
                         </fieldset>
                         <fieldset className="rounded-2xl border border-[#e3dbcf] bg-[#faf7f1] p-4">
@@ -355,8 +360,8 @@ function CreateNoteDrawer({
                                 </span>
                             </legend>
                             <div className="grid gap-4 sm:grid-cols-2">
-                                <label className="grid gap-1.5 font-sans text-xs font-semibold tracking-wide text-stone-500 uppercase">
-                                    Chapter
+                                <div className="grid gap-1.5 font-sans text-xs font-semibold tracking-wide text-stone-500 uppercase">
+                                    <span>Chapter</span>
                                     <CustomSelect
                                         label="End chapter"
                                         value={chapterEnd}
@@ -388,9 +393,9 @@ function CreateNoteDrawer({
                                             }))}
                                         triggerClassName="min-h-[52px] px-4 font-serif text-base font-normal tracking-normal normal-case"
                                     />
-                                </label>
-                                <label className="grid gap-1.5 font-sans text-xs font-semibold tracking-wide text-stone-500 uppercase">
-                                    Verse
+                                </div>
+                                <div className="grid gap-1.5 font-sans text-xs font-semibold tracking-wide text-stone-500 uppercase">
+                                    <span>Verse</span>
                                     <CustomSelect
                                         label="End verse"
                                         value={verseEnd}
@@ -406,7 +411,7 @@ function CreateNoteDrawer({
                                         }))}
                                         triggerClassName="min-h-[52px] px-4 font-serif text-base font-normal tracking-normal normal-case"
                                     />
-                                </label>
+                                </div>
                             </div>
                             {chapterEnd && (
                                 <button
@@ -454,7 +459,12 @@ function CreateNoteDrawer({
                                 disabled={saving}
                             />
                         </div>
-                        <NoteTagsInput value={tags} onChange={setTags} suggestions={tagSuggestions} disabled={saving} />
+                        <NoteTagsInput
+                            value={tags}
+                            onChange={setTags}
+                            suggestions={tagSuggestions}
+                            disabled={saving}
+                        />
                     </div>
                 </div>
                 <footer className="border-t border-[#e3dbcf] bg-[#faf7f1]/95 px-6 py-4 sm:px-8">
@@ -526,9 +536,27 @@ export default function Notes({
                         </div>
                     </div>
                     {tags.length > 0 && (
-                        <nav aria-label="Filter notes by tag" className="mt-7 flex flex-wrap gap-2">
-                            <Link href="/notes" preserveScroll className={`rounded-full border px-4 py-2 font-serif text-sm transition ${!activeTag ? 'border-[#80502f] bg-[#80502f] text-white' : 'border-[#d8cdbf] bg-[#fffaf3] text-[#665d53] hover:border-[#b99473]'}`}>All notes</Link>
-                            {tags.map((tag) => <Link key={tag.id} href={`/notes?tag=${encodeURIComponent(tag.slug)}`} preserveScroll className={`rounded-full border px-4 py-2 font-serif text-sm transition ${activeTag === tag.slug ? 'border-[#80502f] bg-[#80502f] text-white' : 'border-[#d8cdbf] bg-[#fffaf3] text-[#665d53] hover:border-[#b99473]'}`}>{tag.name} ({tag.notesCount})</Link>)}
+                        <nav
+                            aria-label="Filter notes by tag"
+                            className="mt-7 flex flex-wrap gap-2"
+                        >
+                            <Link
+                                href="/notes"
+                                preserveScroll
+                                className={`rounded-full border px-4 py-2 font-serif text-sm transition ${!activeTag ? 'border-[#80502f] bg-[#80502f] text-white' : 'border-[#d8cdbf] bg-[#fffaf3] text-[#665d53] hover:border-[#b99473]'}`}
+                            >
+                                All notes
+                            </Link>
+                            {tags.map((tag) => (
+                                <Link
+                                    key={tag.id}
+                                    href={`/notes?tag=${encodeURIComponent(tag.slug)}`}
+                                    preserveScroll
+                                    className={`rounded-full border px-4 py-2 font-serif text-sm transition ${activeTag === tag.slug ? 'border-[#80502f] bg-[#80502f] text-white' : 'border-[#d8cdbf] bg-[#fffaf3] text-[#665d53] hover:border-[#b99473]'}`}
+                                >
+                                    {tag.name} ({tag.notesCount})
+                                </Link>
+                            ))}
                         </nav>
                     )}
                     {notes.length ? (
@@ -562,7 +590,18 @@ export default function Notes({
                                         <p className="mt-3 line-clamp-4 font-serif leading-7 text-[#554f47]">
                                             {excerpt(note.bodyMarkdown)}
                                         </p>
-                                        {note.tags.length > 0 && <div className="mt-4 flex flex-wrap gap-1.5">{note.tags.map((tag) => <span key={tag.id} className="rounded-full bg-[#eee5d8] px-2.5 py-1 font-sans text-[0.68rem] text-[#684c30]">{tag.name}</span>)}</div>}
+                                        {note.tags.length > 0 && (
+                                            <div className="mt-4 flex flex-wrap gap-1.5">
+                                                {note.tags.map((tag) => (
+                                                    <span
+                                                        key={tag.id}
+                                                        className="rounded-full bg-[#eee5d8] px-2.5 py-1 font-sans text-[0.68rem] text-[#684c30]"
+                                                    >
+                                                        {tag.name}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
                                     </Link>
                                     <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-[#e7dfd4] pt-4">
                                         <span className="font-serif text-xs text-[#928a7e]">
@@ -638,9 +677,9 @@ export default function Notes({
                         </section>
                     )}
                 </main>
-            <CreateNoteDrawer
+                <CreateNoteDrawer
                     books={books}
-                tagSuggestions={tags.map((tag) => tag.name)}
+                    tagSuggestions={tags.map((tag) => tag.name)}
                     open={createOpen}
                     onClose={() => setCreateOpen(false)}
                 />

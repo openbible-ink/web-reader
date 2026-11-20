@@ -58,6 +58,7 @@ class WebpLibrary
         foreach ($entries as $filename => $contents) {
             if (! str_ends_with(strtolower($filename), '.usfm')) {
                 $ignored[] = $filename;
+
                 continue;
             }
 
@@ -65,6 +66,7 @@ class WebpLibrary
             $sourceCode = strtoupper(trim($id[1] ?? ''));
             if (! isset(self::BOOKS[$sourceCode])) {
                 $ignored[] = $filename;
+
                 continue;
             }
 
@@ -126,6 +128,7 @@ class WebpLibrary
             foreach (File::files($source) as $file) {
                 $entries[$file->getFilename()] = File::get($file->getPathname());
             }
+
             return $entries;
         }
         if (! File::isFile($source)) {
@@ -140,14 +143,19 @@ class WebpLibrary
         try {
             for ($index = 0; $index < $archive->numFiles; $index++) {
                 $name = $archive->getNameIndex($index);
-                if ($name === false || str_ends_with($name, '/')) continue;
+                if ($name === false || str_ends_with($name, '/')) {
+                    continue;
+                }
                 $contents = $archive->getFromIndex($index);
-                if ($contents === false) throw new RuntimeException("Unable to read {$name} from WEB archive.");
+                if ($contents === false) {
+                    throw new RuntimeException("Unable to read {$name} from WEB archive.");
+                }
                 $entries[basename($name)] = $contents;
             }
         } finally {
             $archive->close();
         }
+
         return $entries;
     }
 
@@ -158,10 +166,11 @@ class WebpLibrary
         preg_match('/^\\\\toc1\s+(.+)$/m', $source, $longName);
         preg_match_all('/^\\\\c\s+([0-9]+)/m', $source, $chapters);
         $code = strtoupper(trim($id[1] ?? ''));
-        $chapterNumbers = array_map('intval', $chapters[1] ?? []);
+        $chapterNumbers = array_map('intval', $chapters[1]);
         if ($code === '' || ($chapterNumbers[0] ?? 0) !== 1) {
             throw new RuntimeException('Unable to read complete WEB book metadata.');
         }
+
         return [
             'code' => $code,
             'longName' => isset($longName[1]) ? trim($longName[1]) : null,

@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\BibleEdition;
+use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -11,8 +13,12 @@ class BookIndexController extends Controller
 {
     public function __invoke(Request $request): Response
     {
+        $user = Auth::user();
+        $preferredEditionSlug = $user instanceof User
+            ? BibleEdition::query()->whereKey($user->preferred_edition_id)->value('slug')
+            : null;
         $requestedSlug = $request->session()->get('reader_edition_slug')
-            ?? $request->user()?->preferredEdition?->slug
+            ?? $preferredEditionSlug
             ?? 'oeb';
 
         $edition = BibleEdition::query()

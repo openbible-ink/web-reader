@@ -10,7 +10,8 @@ import {
 } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 
-type SavedItemsSection = 'dashboard' | 'read' | 'search' | 'notes' | 'highlights' | 'bookmarks';
+type SavedItemsSection =
+    'dashboard' | 'read' | 'search' | 'notes' | 'highlights' | 'bookmarks';
 
 function DashboardIcon({ className = '' }: { className?: string }) {
     return (
@@ -33,12 +34,27 @@ function DashboardIcon({ className = '' }: { className?: string }) {
 }
 
 const navigation = [
-    { key: 'dashboard', label: 'Dashboard', icon: DashboardIcon, href: '/dashboard' },
+    {
+        key: 'dashboard',
+        label: 'Dashboard',
+        icon: DashboardIcon,
+        href: '/dashboard',
+    },
     { key: 'read', label: 'Read', icon: BookOpen, href: '/read/JHN/1' },
     { key: 'search', label: 'Search', icon: Search, href: '/search' },
     { key: 'notes', label: 'Notes', icon: NotebookPen, href: '/notes' },
-    { key: 'highlights', label: 'Highlights', icon: Highlighter, href: '/highlights' },
-    { key: 'bookmarks', label: 'Bookmarks', icon: Bookmark, href: '/bookmarks' },
+    {
+        key: 'highlights',
+        label: 'Highlights',
+        icon: Highlighter,
+        href: '/highlights',
+    },
+    {
+        key: 'bookmarks',
+        label: 'Bookmarks',
+        icon: Bookmark,
+        href: '/bookmarks',
+    },
 ] as const;
 
 function SavedItemsNavigation({

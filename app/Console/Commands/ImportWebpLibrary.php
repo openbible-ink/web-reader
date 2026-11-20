@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Services\WebpLibrary;
 use Illuminate\Console\Command;
+use RuntimeException;
 use Throwable;
 
 class ImportWebpLibrary extends Command
@@ -15,7 +16,12 @@ class ImportWebpLibrary extends Command
     public function handle(WebpLibrary $library): int
     {
         try {
-            $result = $library->import($this->argument('source'));
+            $source = $this->argument('source');
+            if (! is_string($source)) {
+                throw new RuntimeException('The WEB source must be a file or directory path.');
+            }
+
+            $result = $library->import($source);
         } catch (Throwable $exception) {
             $this->error($exception->getMessage());
 

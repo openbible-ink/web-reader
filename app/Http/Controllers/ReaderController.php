@@ -8,9 +8,11 @@ use App\Models\Bookmark;
 use App\Models\Highlight;
 use App\Models\Note;
 use App\Models\ScriptureArtworkPassage;
+use App\Models\User;
 use App\Services\BibleEditionResolver;
 use App\Support\HighlightLabels;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -18,6 +20,8 @@ class ReaderController extends Controller
 {
     public function __invoke(Request $request, string $book, string $chapter, BibleEditionResolver $resolver): Response
     {
+        $authenticatedUser = Auth::user();
+        $user = $authenticatedUser instanceof User ? $authenticatedUser : null;
         $book = $resolver->resolveBook($request, $book);
         $edition = $book->edition;
 
@@ -124,8 +128,10 @@ class ReaderController extends Controller
             }
         }
 
-        $defaultEdition = $request->user()?->preferredEdition
-            ?? BibleEdition::query()->where('slug', 'oeb')->first();
+        $defaultEdition = $user !== null
+            ? BibleEdition::query()->whereKey($user->preferred_edition_id)->first()
+            : null;
+        $defaultEdition ??= BibleEdition::query()->where('slug', 'oeb')->firstOrFail();
 
         $libraryBooks = $edition->books()
             ->orderBy('canon_position')
@@ -223,7 +229,7 @@ class ReaderController extends Controller
                     ->values()
                 : [],
             'highlightLabels' => HighlightLabels::forUser($request->user()),
-            'redLetterWords' => (bool) ($request->user()?->red_letter_words ?? false),
+            'redLetterWords' => $user !== null ? $user->red_letter_words : false,
             'focusedNoteId' => $focusedNoteId,
             'focusedNoteExpanded' => $focusedNoteExpanded,
             'notes' => $request->user()
@@ -270,7 +276,7 @@ class ReaderController extends Controller
                 ? $request->user()->tags()->orderBy('name')->pluck('name')->values()
                 : [],
             'availableEditions' => $availableEditions,
-            'defaultEditionSlug' => $defaultEdition?->slug ?? $edition->slug,
+            'defaultEditionSlug' => $defaultEdition->slug ?? $edition->slug,
             'comparison' => $comparison,
             'libraryBooks' => $libraryBooks,
             'artworks' => $placements->map(fn (ScriptureArtworkPassage $placement) => [

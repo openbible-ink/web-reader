@@ -17,7 +17,12 @@ class ImportOebLibrary extends Command
     public function handle(OebLibrary $library): int
     {
         try {
-            $result = $library->import($this->argument('source'));
+            $source = $this->argument('source');
+            if (! is_string($source)) {
+                throw new RuntimeException('The OEB source must be a directory path.');
+            }
+
+            $result = $library->import($source);
             $audit = Process::path(base_path())
                 ->timeout(120)
                 ->run(['node', 'scripts/audit-scripture-integrity.mjs', '--json']);

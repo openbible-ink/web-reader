@@ -10,7 +10,11 @@ const manifest = JSON.parse(
 const budgets = [
     ['application shell', 'resources/js/app.tsx', 60],
     ['reader UI', 'resources/js/pages/reader.tsx', 25],
-    ['USFM parser', Object.keys(manifest).find((key) => key.startsWith('_parse-')), 165],
+    [
+        'USFM parser',
+        Object.keys(manifest).find((key) => key.startsWith('_parse-')),
+        165,
+    ],
 ];
 
 let failed = false;
@@ -22,10 +26,14 @@ for (const [label, key, limitKb] of budgets) {
         continue;
     }
 
-    const asset = readFileSync(resolve(root, 'public/build', manifest[key].file));
+    const asset = readFileSync(
+        resolve(root, 'public/build', manifest[key].file),
+    );
     const gzipKb = gzipSync(asset).byteLength / 1024;
     const status = gzipKb <= limitKb ? 'PASS' : 'FAIL';
-    console.log(`${status} ${label}: ${gzipKb.toFixed(1)} kB gzip (budget ${limitKb} kB)`);
+    console.log(
+        `${status} ${label}: ${gzipKb.toFixed(1)} kB gzip (budget ${limitKb} kB)`,
+    );
     failed ||= gzipKb > limitKb;
 }
 

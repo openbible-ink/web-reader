@@ -1,0 +1,11 @@
+/bootstrap/ssr
+/node_modules
+/playwright-report
+/public/build
+/public/bibles
+/resources/js/actions
+/resources/js/routes
+/resources/js/wayfinder
+/test-results
+/vendor
+package-lock.json

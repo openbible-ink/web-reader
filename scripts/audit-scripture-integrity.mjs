@@ -26,9 +26,9 @@ for (const file of files) {
     }
 }
 
-const normalized = findings
-    .map(({ source: _source, ...finding }) => finding)
-    .sort((left, right) => left.fingerprint.localeCompare(right.fingerprint));
+const normalized = findings.sort((left, right) =>
+    left.fingerprint.localeCompare(right.fingerprint),
+);
 
 if (args.has('--write-baseline')) {
     writeFileSync(

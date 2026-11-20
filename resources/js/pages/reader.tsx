@@ -321,9 +321,7 @@ function ReaderTextSkeleton({ comparison = false }: { comparison?: boolean }) {
             {comparison ? (
                 <div className="grid gap-10 md:ml-[4.5rem] md:grid-cols-2 md:gap-8">
                     {column('primary')}
-                    <div className="hidden md:block">
-                        {column('secondary')}
-                    </div>
+                    <div className="hidden md:block">{column('secondary')}</div>
                 </div>
             ) : (
                 <div className="relative">
@@ -847,11 +845,9 @@ function focusedReadingItems(
     const selectedVerses = new Set(verses.slice(startIndex, endIndex + 1));
     const focused: ReadingItem[] = [];
     let currentMajorHeading:
-        | Extract<ReadingItem, { kind: 'heading' }>
-        | undefined;
+        Extract<ReadingItem, { kind: 'heading' }> | undefined;
     let currentSectionHeading:
-        | Extract<ReadingItem, { kind: 'heading' }>
-        | undefined;
+        Extract<ReadingItem, { kind: 'heading' }> | undefined;
     let includedHeadingKeys = new Set<string>();
 
     items.forEach((item) => {
@@ -872,9 +868,7 @@ function focusedReadingItems(
             currentMajorHeading,
             currentSectionHeading,
         ].filter(
-            (
-                heading,
-            ): heading is Extract<ReadingItem, { kind: 'heading' }> =>
+            (heading): heading is Extract<ReadingItem, { kind: 'heading' }> =>
                 heading !== undefined,
         );
         currentHeadings.forEach((heading) => {
@@ -3023,9 +3017,7 @@ export default function Reader({
                 <main
                     ref={readerMainRef}
                     data-reader-main
-                    data-red-letter-words={
-                        redLetterWords ? 'true' : undefined
-                    }
+                    data-red-letter-words={redLetterWords ? 'true' : undefined}
                     className={`relative z-20 -mt-7 min-h-screen rounded-t-[2rem] shadow-[0_-8px_30px_rgba(62,49,30,0.06)] lg:rounded-t-[1.8rem] ${readerSurface}`}
                     style={
                         {
@@ -4241,9 +4233,7 @@ export default function Reader({
                                     {loadError}
                                 </p>
                             )}
-                            {!document && !loadError && (
-                                <ReaderTextSkeleton />
-                            )}
+                            {!document && !loadError && <ReaderTextSkeleton />}
                             {comparison ? (
                                 <div>
                                     {comparisonLoadError && (
@@ -4929,7 +4919,12 @@ export default function Reader({
                                             </p>
                                         </div>
                                         <div className="mt-5">
-                                            <NoteTagsInput value={noteTagNames} onChange={setNoteTagNames} suggestions={noteTags} disabled={noteProcessing} />
+                                            <NoteTagsInput
+                                                value={noteTagNames}
+                                                onChange={setNoteTagNames}
+                                                suggestions={noteTags}
+                                                disabled={noteProcessing}
+                                            />
                                         </div>
                                         {noteError && (
                                             <p
