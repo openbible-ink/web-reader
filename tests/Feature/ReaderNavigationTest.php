@@ -140,7 +140,8 @@ class ReaderNavigationTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('edition.slug', 'oeb')
                 ->where('comparison.edition.slug', 'webp')
-                ->where('comparison.book.sourceUrl', url('/webp-john.usfm')));
+                ->where('comparison.book.sourceUrl', url('/webp-john.usfm'))
+                ->where('comparison.book.chapterUrl', fn (string $url) => str_contains($url, '/api/v1/editions/webp/books/JHN/chapters/1?v=')));
     }
 
     public function test_user_can_explicitly_change_their_default_translation(): void

@@ -49,6 +49,7 @@
             "@php artisan key:generate",
             "@php artisan migrate --force",
             "npm install",
+            "npm run scripture:compile",
             "npm run build"
         ],
         "dev": [
@@ -64,6 +65,7 @@
         "ci:check": [
             "Composer\\Config::disableProcessTimeout",
             "npm run check",
+            "npm run scripture:compile",
             "npm run build",
             "@test",
             "npm run audit:dependencies",

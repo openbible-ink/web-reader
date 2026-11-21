@@ -23,6 +23,12 @@ class ImportOebLibrary extends Command
             }
 
             $result = $library->import($source);
+            $compile = Process::path(base_path())
+                ->timeout(300)
+                ->run(['node', 'scripts/compile-scripture-chapters.mjs', '--edition=oeb']);
+            if ($compile->failed()) {
+                throw new RuntimeException(trim($compile->errorOutput()) ?: 'Unable to compile OEB chapter payloads.');
+            }
             $audit = Process::path(base_path())
                 ->timeout(120)
                 ->run(['node', 'scripts/audit-scripture-integrity.mjs', '--json']);
@@ -43,6 +49,7 @@ class ImportOebLibrary extends Command
         }
 
         $this->info("Imported {$result['imported']} OEB books.");
+        $this->info('Compiled versioned chapter payloads for the reader and public API.');
         $this->info("Integrity audit passed for {$auditReport['files']} books ({$auditReport['errors']} known errors, {$auditReport['warnings']} known warnings; no baseline drift).");
         if ($result['patches'] !== []) {
             $this->info('Applied documented source patches:');

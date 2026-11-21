@@ -22,6 +22,26 @@ test('reads scripture and navigates between chapters', async ({ page }) => {
     ).toBeVisible();
 });
 
+test('navigates chapters with Shift and arrow keys', async ({ page }) => {
+    await page.goto('/read/JHN/2');
+    await expect(page.getByText('Two days after this')).toBeVisible();
+
+    await page.keyboard.press('Shift+ArrowRight');
+    await page.keyboard.press('Shift+ArrowRight');
+    await page.keyboard.press('Shift+ArrowRight');
+    await expect(page).toHaveURL(/\/read\/JHN\/3/);
+    await expect(
+        page.getByText('Now there was a Pharisee named Nicodemus'),
+    ).toBeVisible();
+
+    await page.waitForTimeout(300);
+    await page.keyboard.press('Shift+ArrowLeft');
+    await page.keyboard.press('Shift+ArrowLeft');
+    await page.keyboard.press('Shift+ArrowLeft');
+    await expect(page).toHaveURL(/\/read\/JHN\/2/);
+    await expect(page.getByText('Two days after this')).toBeVisible();
+});
+
 test('switches translation for the passage without changing its canonical route', async ({
     page,
 }) => {

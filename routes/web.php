@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\ScriptureChapterController;
 use App\Http\Controllers\BookIndexController;
 use App\Http\Controllers\BookmarkController;
 use App\Http\Controllers\BookOverviewController;
@@ -32,6 +33,9 @@ Route::get('/books/{edition}/{book}', fn (string $edition, string $book) => redi
     'book' => $book,
 ]))->name('books.legacy');
 Route::get('/search', SearchController::class)->name('search');
+Route::get('/api/v1/editions/{edition}/books/{book}/chapters/{chapter}', ScriptureChapterController::class)
+    ->where(['edition' => '[a-z0-9-]+', 'book' => '[A-Za-z0-9]{3}', 'chapter' => '[0-9]+'])
+    ->name('api.scripture.chapter');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');

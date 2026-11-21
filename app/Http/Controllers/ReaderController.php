@@ -10,6 +10,7 @@ use App\Models\Note;
 use App\Models\ScriptureArtworkPassage;
 use App\Models\User;
 use App\Services\BibleEditionResolver;
+use App\Services\ScriptureChapterRepository;
 use App\Support\HighlightLabels;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -18,7 +19,7 @@ use Inertia\Response;
 
 class ReaderController extends Controller
 {
-    public function __invoke(Request $request, string $book, string $chapter, BibleEditionResolver $resolver): Response
+    public function __invoke(Request $request, string $book, string $chapter, BibleEditionResolver $resolver, ScriptureChapterRepository $chapters): Response
     {
         $authenticatedUser = Auth::user();
         $user = $authenticatedUser instanceof User ? $authenticatedUser : null;
@@ -123,6 +124,7 @@ class ReaderController extends Controller
                     'book' => [
                         'code' => $comparisonBook->book_code,
                         'sourceUrl' => asset($comparisonBook->source_path),
+                        'chapterUrl' => $chapters->url($comparisonBook, $chapter),
                     ],
                 ];
             }
@@ -164,6 +166,7 @@ class ReaderController extends Controller
                 'name' => $book->name,
                 'longName' => $book->long_name,
                 'sourceUrl' => asset($book->source_path),
+                'chapterUrl' => $chapters->url($book, $chapter),
                 'chapterCount' => $book->chapter_count,
             ],
             'chapter' => $chapter,

@@ -110,11 +110,6 @@ html[data-chapter-transition-fallback='true'] [data-reader-chapter-content] {
     opacity: 0;
 }
 
-html[data-chapter-transition-fallback='true'][data-chapter-transition-position='page']
-    [data-reader-hero-text] {
-    opacity: 0;
-}
-
 html[data-translation-swap='true'] {
     view-transition-name: none;
 }

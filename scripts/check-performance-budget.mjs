@@ -10,11 +10,7 @@ const manifest = JSON.parse(
 const budgets = [
     ['application shell', 'resources/js/app.tsx', 60],
     ['reader UI', 'resources/js/pages/reader.tsx', 25],
-    [
-        'USFM parser',
-        Object.keys(manifest).find((key) => key.startsWith('_parse-')),
-        165,
-    ],
+    ['lazy OEB parser fallback', '../usfm-parser/dist/oeb/index.js', 20],
 ];
 
 let failed = false;
@@ -35,6 +31,22 @@ for (const [label, key, limitKb] of budgets) {
         `${status} ${label}: ${gzipKb.toFixed(1)} kB gzip (budget ${limitKb} kB)`,
     );
     failed ||= gzipKb > limitKb;
+}
+
+const reader = manifest['resources/js/pages/reader.tsx'];
+const parserKey = '../usfm-parser/dist/oeb/index.js';
+if (
+    !reader?.dynamicImports?.includes(parserKey) ||
+    reader?.imports?.includes(parserKey)
+) {
+    console.error(
+        'FAIL reader delivery: the OEB parser must be a dynamic fallback, not a standard reader import.',
+    );
+    failed = true;
+} else {
+    console.log(
+        'PASS reader delivery: standard chapter payload path excludes the OEB parser.',
+    );
 }
 
 if (failed) process.exitCode = 1;

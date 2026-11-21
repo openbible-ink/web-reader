@@ -29,6 +29,7 @@ class ExampleTest extends TestCase
                 ->where('edition.variantProfile', 'oeb')
                 ->where('book.code', 'JHN')
                 ->where('book.sourceUrl', url('/bibles/oeb/43-John.usfm.db'))
+                ->where('book.chapterUrl', fn (string $url) => str_contains($url, '/api/v1/editions/oeb/books/JHN/chapters/1?v='))
                 ->where('chapter', '1'));
     }
 

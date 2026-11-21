@@ -26,384 +26,63 @@ import {
     type ReactNode,
     useCallback,
     useEffect,
+    useEffectEvent,
     useLayoutEffect,
     useMemo,
     useRef,
     useState,
 } from 'react';
-import {
-    cachedScriptureSource,
-    loadScriptureSource,
-} from '@/lib/scripture-source-cache';
 import { getBookGradient } from '@/lib/book-gradients';
 import { getCanonicalBookMetadata } from '@/lib/book-metadata';
-import type {
-    BibleDocument,
-    FlowNode,
-    InlineNode,
-    NoteFieldNode,
-    NoteNode,
-} from 'usfm-parser';
-import { parseUsfm } from 'usfm-parser';
-import { parseOeb, type OebVariantOptions } from 'usfm-parser/oeb';
+import type { InlineNode, NoteFieldNode, NoteNode } from 'usfm-parser';
 import { toast } from 'sonner';
 import NoteEditor from '@/components/note-editor';
 import NoteTagsInput from '@/components/note-tags-input';
 import CustomSelect from '@/components/custom-select';
-
-interface ScriptureArtwork {
-    id: string;
-    imageUrl: string;
-    title?: string;
-    altText: string;
-    caption?: string;
-    approach: 'historical' | 'symbolic' | 'narrative' | 'artistic';
-    attribution?: string;
-    license?: string;
-    focalPoint?: { x?: number; y?: number };
-    reference: {
-        book: string;
-        chapter?: string | null;
-        sectionKey?: string | null;
-        verseStart?: string | null;
-        verseEnd?: string | null;
-    };
-    role: 'hero' | 'inline' | 'background' | 'gallery';
-}
-
-function FilledHighlighter({ className = '' }: { className?: string }) {
-    return (
-        <svg
-            viewBox="0 0 24 24"
-            className={className}
-            fill="currentColor"
-            aria-hidden="true"
-        >
-            <path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4Z" />
-            <path d="m8.25 13.05-5.5 5.5V21h8.5l2.55-2.55Z" />
-        </svg>
-    );
-}
-
-function SwapTranslationsIcon({ className = '' }: { className?: string }) {
-    return (
-        <svg
-            viewBox="0 0 24 24"
-            className={className}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-        >
-            <polyline points="17 1 21 5 17 9" />
-            <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-            <polyline points="7 23 3 19 7 15" />
-            <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-        </svg>
-    );
-}
-
-interface ReaderProps {
-    canonicalUrl: string;
-    edition: {
-        slug: string;
-        name: string;
-        abbreviation: string;
-        language: string;
-        licence?: string | null;
-        attribution?: string | null;
-        sourceFormat: string;
-        variantProfile?: string | null;
-    };
-    book: {
-        id: string;
-        code: string;
-        name: string;
-        longName?: string | null;
-        sourceUrl: string;
-        chapterCount: number;
-    };
-    chapter: string;
-    focusedSectionKey?: string | null;
-    availableEditions: Array<{
-        slug: string;
-        name: string;
-        abbreviation: string;
-        language: string;
-        licence?: string | null;
-        attribution?: string | null;
-        bookCode: string;
-    }>;
-    defaultEditionSlug: string;
-    redLetterWords: boolean;
-    comparison?: {
-        edition: {
-            slug: string;
-            name: string;
-            abbreviation: string;
-            language: string;
-            sourceFormat: string;
-            variantProfile?: string | null;
-        };
-        book: {
-            code: string;
-            sourceUrl: string;
-        };
-    } | null;
-    libraryBooks: Array<{
-        code: string;
-        name: string;
-        testament: 'old' | 'new';
-        readerUrl: string;
-    }>;
-    artworks?: ScriptureArtwork[];
-    bookmarks?: ChapterBookmark[];
-    focusedBookmark?: ChapterBookmark | null;
-    focusedPassage?: FocusedPassage | null;
-    highlights?: ScriptureHighlight[];
-    highlightLabels: Record<HighlightColor, string>;
-    notes?: ScriptureNote[];
-    noteTags?: string[];
-    focusedNoteId?: string | null;
-    focusedNoteExpanded?: boolean;
-}
-
-interface ChapterBookmark {
-    id: string;
-    title?: string | null;
-    verseStart?: string | null;
-    verseEnd?: string | null;
-}
-
-interface FocusedPassage {
-    label: string;
-    verseStart: string;
-    verseEnd: string;
-}
-
-type HighlightColor = 'yellow' | 'green' | 'blue' | 'rose';
-
-interface HighlightSegment {
-    verse: string;
-    startOffset: number;
-    endOffset: number;
-    exactText: string;
-    prefix?: string | null;
-    suffix?: string | null;
-}
-
-interface ScriptureHighlight {
-    id: string;
-    color: HighlightColor;
-    selectedText: string;
-    segments: HighlightSegment[];
-}
-
-type NoteAnchorType = 'verse' | 'range' | 'section' | 'selection';
-
-interface ScriptureNote {
-    id: string;
-    title: string;
-    bodyMarkdown: string;
-    anchorType: NoteAnchorType;
-    selectedText?: string | null;
-    sectionKey?: string | null;
-    sectionTitle?: string | null;
-    verseStart?: string | null;
-    verseEnd?: string | null;
-    segments: HighlightSegment[];
-    tags: Array<{ id: string; name: string; slug: string }>;
-}
-
-interface NoteAnchor {
-    type: NoteAnchorType;
-    verseStart?: string;
-    verseEnd?: string;
-    sectionKey?: string;
-    sectionTitle?: string;
-    selectedText?: string;
-    segments?: HighlightSegment[];
-}
-
-interface PendingHighlight {
-    selectedText: string;
-    segments: HighlightSegment[];
-    position: { top: number; left: number };
-}
-
-interface SelectionNotePreview {
-    note: ScriptureNote;
-    position: { top: number; left: number };
-}
-
-interface FootnotePreview {
-    note: NoteNode;
-    position: { top: number; left: number; placement: 'above' | 'below' };
-}
-
-type ReadingItem =
-    | { key: string; kind: 'heading'; style: string; content: InlineNode[] }
-    | { key: string; kind: 'verse'; number: string; content: InlineNode[] };
-
-interface OutlineItem {
-    key: string;
-    slug: string;
-    style: string;
-    title: string;
-    verseStart?: string;
-    verseEnd?: string;
-}
-
-interface ComparisonRow {
-    number: string;
-    primary?: Extract<ReadingItem, { kind: 'verse' }>;
-    secondary?: Extract<ReadingItem, { kind: 'verse' }>;
-    primaryHeadings: Extract<ReadingItem, { kind: 'heading' }>[];
-    secondaryHeadings: Extract<ReadingItem, { kind: 'heading' }>[];
-}
-
-interface TypographyPreferences {
-    fontSize: 'small' | 'medium' | 'large';
-    lineSpacing: 'compact' | 'comfortable' | 'relaxed';
-    theme: 'light' | 'dark' | 'sepia';
-}
-
-const readerSkeletonRows = [
-    ['88%', '64%'],
-    ['96%', '78%'],
-    ['82%', '55%'],
-    ['92%', '70%'],
-    ['76%', '48%'],
-] as const;
-
-function ReaderTextSkeleton({ comparison = false }: { comparison?: boolean }) {
-    const column = (suffix = '') => (
-        <div className="space-y-5" aria-hidden="true">
-            <div className="ml-[1.75rem] h-2 w-40 rounded-full bg-current opacity-[0.09]" />
-            {readerSkeletonRows.map((widths, index) => (
-                <div
-                    key={`${suffix}-${index}`}
-                    className="grid grid-cols-[1.25rem_minmax(0,1fr)_2rem] items-start gap-x-2"
-                >
-                    <span className="mt-1.5 h-2 w-2 justify-self-end rounded-full bg-current opacity-[0.1]" />
-                    <span className="space-y-2.5">
-                        {widths.map((width) => (
-                            <span
-                                key={width}
-                                className="block h-[0.72rem] rounded-full bg-current opacity-[0.085]"
-                                style={{ width }}
-                            />
-                        ))}
-                    </span>
-                    <span className="mt-0.5 size-6 rounded-full bg-current opacity-[0.055]" />
-                </div>
-            ))}
-        </div>
-    );
-
-    return (
-        <div
-            role="status"
-            aria-label={
-                comparison
-                    ? 'Preparing the comparison text'
-                    : 'Preparing the scripture text'
-            }
-            className="motion-safe:animate-pulse"
-        >
-            <span className="sr-only">
-                {comparison
-                    ? 'Preparing the comparison text…'
-                    : 'Preparing the scripture text…'}
-            </span>
-            {comparison ? (
-                <div className="grid gap-10 md:ml-[4.5rem] md:grid-cols-2 md:gap-8">
-                    {column('primary')}
-                    <div className="hidden md:block">{column('secondary')}</div>
-                </div>
-            ) : (
-                <div className="relative">
-                    <span
-                        aria-hidden="true"
-                        className="absolute top-5 left-0 h-14 w-10 rounded-xl bg-[var(--reader-accent)] opacity-[0.14]"
-                    />
-                    <div className="ml-[4.5rem]">{column('reader')}</div>
-                </div>
-            )}
-        </div>
-    );
-}
-
-function notePreview(markdown: string): string {
-    return markdown
-        .replace(/[#>*_`[\]()!-]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-}
-
-function NoteMarker({
-    notes,
-    onClick,
-    variant = 'verse',
-    className = '',
-}: {
-    notes: ScriptureNote[];
-    onClick: () => void;
-    variant?: 'verse' | 'section';
-    className?: string;
-}) {
-    const isSection = variant === 'section';
-
-    return (
-        <span
-            className={`group/note relative flex justify-end pt-0.5 font-sans ${className}`}
-        >
-            <button
-                type="button"
-                onClick={onClick}
-                aria-label={
-                    notes.length
-                        ? `Open ${notes.length} ${notes.length === 1 ? 'note' : 'notes'}`
-                        : 'Add note'
-                }
-                className={`relative inline-grid size-8 cursor-pointer place-items-center rounded-full transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--reader-accent)] ${notes.length ? (isSection ? 'text-black opacity-100' : 'text-[var(--reader-accent)] opacity-100') : 'text-stone-400 opacity-0 group-focus-within/verse:opacity-100 group-hover/verse:opacity-100 hover:text-[var(--reader-accent)] focus:opacity-100'}`}
-            >
-                <NotebookPen
-                    className={`size-4 ${notes.length ? (isSection ? 'fill-stone-500/35' : 'fill-current/15') : ''}`}
-                />
-                {notes.length > 1 && (
-                    <span
-                        className={`absolute -top-1 -right-1 grid size-4 place-items-center rounded-full text-[0.62rem] font-bold text-white tabular-nums ${isSection ? 'bg-stone-950' : 'bg-[var(--reader-accent)]'}`}
-                    >
-                        {notes.length}
-                    </span>
-                )}
-            </button>
-            {notes.length > 0 && (
-                <span
-                    role="tooltip"
-                    className="pointer-events-none absolute top-8 right-0 z-40 hidden w-72 rounded-xl border border-stone-200 bg-[#fffdf9] p-4 text-left text-stone-800 shadow-xl group-focus-within/note:block group-hover/note:block"
-                >
-                    {notes.slice(0, 3).map((note) => (
-                        <span
-                            key={note.id}
-                            className="block border-b border-dotted border-stone-300 py-2 last:border-0"
-                        >
-                            <span className="block text-xs font-semibold">
-                                {note.title}
-                            </span>
-                            <span className="mt-1 line-clamp-3 block font-serif text-sm leading-5 text-stone-600">
-                                {notePreview(note.bodyMarkdown)}
-                            </span>
-                        </span>
-                    ))}
-                </span>
-            )}
-        </span>
-    );
-}
+import { useReaderScripture } from '@/features/reader/use-reader-scripture';
+import { useReaderPreferences } from '@/features/reader/use-reader-preferences';
+import { ReaderBrand, ReaderLibrary } from '@/features/reader/reader-library';
+import {
+    FilledHighlighter,
+    NoteMarker,
+    PreferenceSelect,
+    ReaderTextSkeleton,
+    SwapTranslationsIcon,
+    TypographyChoice,
+    notePreview,
+} from '@/features/reader/reader-ui';
+import {
+    captureHighlightSelection,
+    textOffset,
+} from '@/features/reader/selection-ranges';
+import {
+    useReaderHighlights,
+    useReaderParallax,
+} from '@/features/reader/use-reader-effects';
+import type {
+    ChapterBookmark,
+    FootnotePreview,
+    HighlightColor,
+    NoteAnchor,
+    NoteAnchorType,
+    PendingHighlight,
+    ReaderProps,
+    ScriptureHighlight,
+    ScriptureNote,
+    SelectionNotePreview,
+} from '@/features/reader/types';
+import {
+    chapterContent,
+    chapterOutline,
+    comparisonRows,
+    focusedReadingItems,
+    inlinePlainText,
+    isMajorHeading,
+    readingHeadingLayoutClass,
+    readingItems,
+    type OutlineItem,
+    type ReadingItem,
+} from '@/features/reader/scripture-content';
 
 const highlightColors: Array<{
     value: HighlightColor;
@@ -415,188 +94,27 @@ const highlightColors: Array<{
     { value: 'blue', label: 'Soft blue', className: 'bg-[#91b8cb]' },
     { value: 'rose', label: 'Dusty rose', className: 'bg-[#d8a0a0]' },
 ];
+const highlightColorValues = highlightColors.map(({ value }) => value);
 
-function textOffset(
-    root: HTMLElement,
-    boundaryNode: Node,
-    boundaryOffset: number,
-): number {
-    const range = window.document.createRange();
-    range.selectNodeContents(root);
-    range.setEnd(boundaryNode, boundaryOffset);
-    return range.toString().length;
-}
-
-function captureHighlightSelection(
-    article: HTMLElement,
-): PendingHighlight | undefined {
-    const selection = window.getSelection();
-    if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
-        return undefined;
-    }
-
-    const range = selection.getRangeAt(0);
-    if (!article.contains(range.commonAncestorContainer)) return undefined;
-
-    const segments = Array.from(
-        article.querySelectorAll<HTMLElement>('[data-verse-number]'),
-    ).flatMap((verseElement) => {
-        if (!range.intersectsNode(verseElement)) return [];
-
-        const text = verseElement.textContent ?? '';
-        const startsHere = verseElement.contains(range.startContainer);
-        const endsHere = verseElement.contains(range.endContainer);
-        const startOffset = startsHere
-            ? textOffset(verseElement, range.startContainer, range.startOffset)
-            : 0;
-        const endOffset = endsHere
-            ? textOffset(verseElement, range.endContainer, range.endOffset)
-            : text.length;
-        if (endOffset <= startOffset) return [];
-
-        const exactText = text.slice(startOffset, endOffset);
-        if (!exactText.trim()) return [];
-
-        return [
-            {
-                verse: verseElement.dataset.verseNumber!,
-                startOffset,
-                endOffset,
-                exactText,
-                prefix: text.slice(Math.max(0, startOffset - 32), startOffset),
-                suffix: text.slice(endOffset, endOffset + 32),
-            },
-        ];
-    });
-
-    if (!segments.length) return undefined;
-    const rect = range.getBoundingClientRect();
-
-    return {
-        selectedText: selection.toString().trim(),
-        segments,
-        position: {
-            top: rect.bottom + 10,
-            left: rect.left + rect.width / 2,
-        },
-    };
-}
-
-function pointAtTextOffset(root: HTMLElement, requestedOffset: number) {
-    const walker = window.document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    let remaining = requestedOffset;
-    let node = walker.nextNode();
-
-    while (node) {
-        const length = node.textContent?.length ?? 0;
-        if (remaining <= length) return { node, offset: remaining };
-        remaining -= length;
-        node = walker.nextNode();
-    }
-
-    return { node: root, offset: root.childNodes.length };
-}
-
-function rangeForHighlightSegment(
-    verseElement: HTMLElement,
-    segment: HighlightSegment,
-): Range | undefined {
-    const text = verseElement.textContent ?? '';
-    let startOffset = segment.startOffset;
-    let endOffset = segment.endOffset;
-
-    if (text.slice(startOffset, endOffset) !== segment.exactText) {
-        const matches: number[] = [];
-        let match = text.indexOf(segment.exactText);
-        while (match !== -1) {
-            matches.push(match);
-            match = text.indexOf(segment.exactText, match + 1);
-        }
-        const anchored = matches.find((index) => {
-            const prefixMatches = segment.prefix
-                ? text.slice(
-                      Math.max(0, index - segment.prefix.length),
-                      index,
-                  ) === segment.prefix
-                : true;
-            const suffixMatches = segment.suffix
-                ? text.slice(
-                      index + segment.exactText.length,
-                      index + segment.exactText.length + segment.suffix.length,
-                  ) === segment.suffix
-                : true;
-            return prefixMatches && suffixMatches;
-        });
-        const fallback = anchored ?? matches.at(0);
-        if (fallback === undefined) return undefined;
-        startOffset = fallback;
-        endOffset = fallback + segment.exactText.length;
-    }
-
-    const start = pointAtTextOffset(verseElement, startOffset);
-    const end = pointAtTextOffset(verseElement, endOffset);
-    const range = window.document.createRange();
-    range.setStart(start.node, start.offset);
-    range.setEnd(end.node, end.offset);
-    return range;
-}
-
-const defaultPreferences: OebVariantOptions = {
-    spelling: 'cth',
-    gender: 'neut',
-    versification: 'nrsv',
-    gehenna: 'gehenna',
-    ioudaioi: 'ioudaioi',
-};
-const defaultTypography: TypographyPreferences = {
-    fontSize: 'medium',
-    lineSpacing: 'comfortable',
-    theme: 'light',
-};
-const typographyPreferencesKey = 'bible-reader:typography';
 const chapterNavigationPositionKey =
     'open-bible:chapter-navigation-reader-docked';
-const documentCache = new Map<string, BibleDocument>();
-const maximumCachedDocuments = 32;
+const chapterNavigationLockKey = 'chapterNavigationLock';
 
-function rememberDocument(key: string, document: BibleDocument): BibleDocument {
-    documentCache.delete(key);
-    documentCache.set(key, document);
+function beginChapterNavigation(): string | undefined {
+    const root = window.document.documentElement;
+    if (root.dataset[chapterNavigationLockKey]) return undefined;
 
-    const oldestKey = documentCache.keys().next().value;
-    if (documentCache.size > maximumCachedDocuments && oldestKey) {
-        documentCache.delete(oldestKey);
-    }
+    const token = `${Date.now()}-${Math.random()}`;
+    root.dataset[chapterNavigationLockKey] = token;
+    window.setTimeout(() => releaseChapterNavigation(token), 3_000);
 
-    return document;
+    return token;
 }
 
-function preferencesKey(editionSlug: string): string {
-    return `bible-reader:${editionSlug}:preferences`;
-}
-
-function savedPreferences(editionSlug: string): OebVariantOptions {
-    if (typeof window === 'undefined') return defaultPreferences;
-    try {
-        const saved = window.localStorage.getItem(preferencesKey(editionSlug));
-        return saved
-            ? { ...defaultPreferences, ...JSON.parse(saved) }
-            : defaultPreferences;
-    } catch {
-        return defaultPreferences;
-    }
-}
-
-function savedTypography(): TypographyPreferences {
-    if (typeof window === 'undefined') return defaultTypography;
-    try {
-        const saved = window.localStorage.getItem(typographyPreferencesKey);
-        return saved
-            ? { ...defaultTypography, ...JSON.parse(saved) }
-            : defaultTypography;
-    } catch {
-        return defaultTypography;
-    }
+function releaseChapterNavigation(token?: string): void {
+    const root = window.document.documentElement;
+    if (token && root.dataset[chapterNavigationLockKey] !== token) return;
+    delete root.dataset[chapterNavigationLockKey];
 }
 
 function noteText(fields: NoteFieldNode[]): string {
@@ -710,459 +228,6 @@ function renderVerseContent(
     ));
 }
 
-function inlinePlainText(nodes: InlineNode[]): string {
-    return nodes
-        .map((node) => {
-            if (node.type === 'text') return node.value;
-            if (node.type === 'inline') return inlinePlainText(node.children);
-            if (node.type === 'unknown') return node.value ?? '';
-            return '';
-        })
-        .join('')
-        .replace(/\s+/g, ' ')
-        .trim();
-}
-
-function chapterNumbers(document: BibleDocument): string[] {
-    return document.children
-        .filter((node) => node.type === 'chapterStart')
-        .map((node) => node.number);
-}
-
-function isSectionHeading(node: FlowNode): boolean {
-    return (
-        node.type === 'block' &&
-        (node.style.startsWith('s') || node.style.startsWith('ms'))
-    );
-}
-
-function isMajorHeading(
-    heading: Extract<ReadingItem, { kind: 'heading' }>,
-): boolean {
-    return heading.style.startsWith('ms');
-}
-
-function readingHeadingLayoutClass(
-    items: ReadingItem[],
-    index: number,
-    dividerClass: string,
-): string {
-    if (index === 0) return '';
-    if (items[index - 1]?.kind === 'heading') return 'mt-3';
-
-    return `relative mt-12 pt-7 before:pointer-events-none before:absolute before:top-0 before:right-0 before:left-[5rem] before:border-t before:content-[''] ${dividerClass}`;
-}
-
-function chapterContent(document: BibleDocument, chapter: string): FlowNode[] {
-    const start = document.children.findIndex(
-        (node) => node.type === 'chapterStart' && node.number === chapter,
-    );
-    if (start === -1) return [];
-    const next = document.children.findIndex(
-        (node, index) => index > start && node.type === 'chapterStart',
-    );
-    let leadingHeadingStart = start;
-    while (
-        leadingHeadingStart > 0 &&
-        isSectionHeading(document.children[leadingHeadingStart - 1]!)
-    ) {
-        leadingHeadingStart -= 1;
-    }
-
-    let contentEnd = next === -1 ? document.children.length : next;
-    while (
-        contentEnd > start + 1 &&
-        isSectionHeading(document.children[contentEnd - 1]!)
-    ) {
-        contentEnd -= 1;
-    }
-
-    return [
-        ...document.children.slice(leadingHeadingStart, start),
-        ...document.children.slice(start + 1, contentEnd),
-    ];
-}
-
-function readingItems(nodes: FlowNode[]): ReadingItem[] {
-    const items: ReadingItem[] = [];
-    let verse: { key: string; number: string; content: InlineNode[] } | null =
-        null;
-    const flushVerse = () => {
-        if (verse) items.push({ ...verse, kind: 'verse' });
-        verse = null;
-    };
-    const consumeInline = (node: InlineNode) => {
-        if (node.type === 'verseStart') {
-            flushVerse();
-            verse = { key: node.id, number: node.number, content: [] };
-        } else if (verse) {
-            verse.content.push(node);
-        }
-    };
-
-    for (const node of nodes) {
-        if (node.type === 'chapterStart') continue;
-
-        if (node.type !== 'block') {
-            consumeInline(node);
-            continue;
-        }
-
-        if (node.style.startsWith('s') || node.style.startsWith('ms')) {
-            flushVerse();
-            items.push({
-                key: node.id,
-                kind: 'heading',
-                style: node.style,
-                content: node.children,
-            });
-            continue;
-        }
-        node.children.forEach(consumeInline);
-    }
-    flushVerse();
-    return items;
-}
-
-function focusedReadingItems(
-    items: ReadingItem[],
-    verseStart?: string | null,
-    verseEnd?: string | null,
-): ReadingItem[] {
-    if (!verseStart) return items;
-
-    const verses = items.flatMap((item) =>
-        item.kind === 'verse' ? [item.number] : [],
-    );
-    const startIndex = verses.indexOf(verseStart);
-    const requestedEndIndex = verses.indexOf(verseEnd ?? verseStart);
-    if (startIndex === -1) return items;
-
-    const endIndex = Math.max(
-        startIndex,
-        requestedEndIndex === -1 ? startIndex : requestedEndIndex,
-    );
-    const selectedVerses = new Set(verses.slice(startIndex, endIndex + 1));
-    const focused: ReadingItem[] = [];
-    let currentMajorHeading:
-        Extract<ReadingItem, { kind: 'heading' }> | undefined;
-    let currentSectionHeading:
-        Extract<ReadingItem, { kind: 'heading' }> | undefined;
-    let includedHeadingKeys = new Set<string>();
-
-    items.forEach((item) => {
-        if (item.kind === 'heading') {
-            if (isMajorHeading(item)) {
-                currentMajorHeading = item;
-                currentSectionHeading = undefined;
-            } else {
-                currentSectionHeading = item;
-            }
-            includedHeadingKeys = new Set();
-            return;
-        }
-
-        if (!selectedVerses.has(item.number)) return;
-
-        const currentHeadings = [
-            currentMajorHeading,
-            currentSectionHeading,
-        ].filter(
-            (heading): heading is Extract<ReadingItem, { kind: 'heading' }> =>
-                heading !== undefined,
-        );
-        currentHeadings.forEach((heading) => {
-            if (!includedHeadingKeys.has(heading.key)) {
-                focused.push(heading);
-                includedHeadingKeys.add(heading.key);
-            }
-        });
-        focused.push(item);
-    });
-
-    return focused;
-}
-
-function chapterOutline(items: ReadingItem[]): OutlineItem[] {
-    const slugs = new Map<string, number>();
-
-    return items.flatMap((item, index) => {
-        if (item.kind !== 'heading') return [];
-
-        const title = inlinePlainText(item.content);
-        const baseSlug =
-            title
-                .normalize('NFKD')
-                .replace(/[\u0300-\u036f]/g, '')
-                .toLowerCase()
-                .replace(/[^a-z0-9]+/g, '-')
-                .replace(/^-+|-+$/g, '') || 'section';
-        const occurrence = (slugs.get(baseSlug) ?? 0) + 1;
-        slugs.set(baseSlug, occurrence);
-
-        const verses: string[] = [];
-        for (const following of items.slice(index + 1)) {
-            if (
-                following.kind === 'heading' &&
-                (!isMajorHeading(item) || isMajorHeading(following))
-            )
-                break;
-            if (following.kind === 'heading') continue;
-            verses.push(following.number);
-        }
-
-        return [
-            {
-                key: item.key,
-                slug: occurrence === 1 ? baseSlug : `${baseSlug}-${occurrence}`,
-                style: item.style,
-                title,
-                verseStart: verses.at(0),
-                verseEnd: verses.at(-1),
-            },
-        ];
-    });
-}
-
-function comparisonRows(
-    primaryItems: ReadingItem[],
-    secondaryItems: ReadingItem[],
-): ComparisonRow[] {
-    const collect = (items: ReadingItem[]) => {
-        const verses = new Map<
-            string,
-            {
-                verse: Extract<ReadingItem, { kind: 'verse' }>;
-                headings: Extract<ReadingItem, { kind: 'heading' }>[];
-            }
-        >();
-        let headings: Extract<ReadingItem, { kind: 'heading' }>[] = [];
-
-        items.forEach((item) => {
-            if (item.kind === 'heading') {
-                headings = [...headings, item];
-                return;
-            }
-            verses.set(item.number, { verse: item, headings });
-            headings = [];
-        });
-
-        return verses;
-    };
-
-    const primary = collect(primaryItems);
-    const secondary = collect(secondaryItems);
-    const numbers = [
-        ...primary.keys(),
-        ...[...secondary.keys()].filter((number) => !primary.has(number)),
-    ];
-
-    return numbers.map((number) => ({
-        number,
-        primary: primary.get(number)?.verse,
-        secondary: secondary.get(number)?.verse,
-        primaryHeadings: primary.get(number)?.headings ?? [],
-        secondaryHeadings: secondary.get(number)?.headings ?? [],
-    }));
-}
-
-interface PreferenceSelectProps {
-    label: string;
-    value: string;
-    options: Array<{ value: string; label: string }>;
-    onChange: (value: string) => void;
-}
-
-function PreferenceSelect({
-    label,
-    value,
-    options,
-    onChange,
-}: PreferenceSelectProps) {
-    return (
-        <div className="grid gap-1.5 text-xs tracking-wide text-stone-500 uppercase">
-            <span>{label}</span>
-            <CustomSelect
-                label={label}
-                value={value}
-                onChange={onChange}
-                options={options}
-                triggerClassName="rounded-lg text-sm tracking-normal normal-case"
-            />
-        </div>
-    );
-}
-
-function TypographyChoice<Value extends string>({
-    label,
-    value,
-    options,
-    onChange,
-}: {
-    label: string;
-    value: Value;
-    options: Array<{ value: Value; label: string }>;
-    onChange: (value: Value) => void;
-}) {
-    return (
-        <fieldset>
-            <legend className="mb-2 text-xs font-semibold tracking-[0.16em] text-stone-500 uppercase">
-                {label}
-            </legend>
-            <div className="grid auto-cols-fr grid-flow-col gap-1 rounded-xl bg-stone-100 p-1">
-                {options.map((option) => (
-                    <button
-                        key={option.value}
-                        type="button"
-                        aria-pressed={value === option.value}
-                        onClick={() => onChange(option.value)}
-                        className={`cursor-pointer rounded-lg px-2 py-2 text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#a95624] ${value === option.value ? 'bg-white text-stone-950 shadow-sm' : 'text-stone-600 hover:bg-white/60 hover:text-stone-950'}`}
-                    >
-                        {option.label}
-                    </button>
-                ))}
-            </div>
-        </fieldset>
-    );
-}
-
-function DashboardIcon({
-    className = '',
-    strokeWidth = 1.6,
-}: {
-    className?: string;
-    strokeWidth?: number;
-}) {
-    return (
-        <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={strokeWidth}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={className}
-            aria-hidden="true"
-        >
-            <rect x="3" y="3" width="7.5" height="4.5" rx="0.8" />
-            <rect x="13.5" y="3" width="7.5" height="9.5" rx="0.8" />
-            <rect x="3" y="10.5" width="7.5" height="10.5" rx="0.8" />
-            <rect x="13.5" y="15.5" width="7.5" height="5.5" rx="0.8" />
-        </svg>
-    );
-}
-
-function Brand() {
-    return (
-        <Link
-            href="/dashboard"
-            className="flex items-center gap-3 rounded-md text-stone-950 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#a95624]"
-        >
-            <img
-                src="/images/brand/open-bible-mark-dark-128.png"
-                alt=""
-                aria-hidden="true"
-                className="size-8 object-contain"
-                width="32"
-                height="32"
-            />
-            <span className="font-serif text-[1.08rem] font-semibold">
-                Open Bible
-            </span>
-        </Link>
-    );
-}
-
-function Library({
-    activeBookCode,
-    books,
-    close,
-}: {
-    activeBookCode: string;
-    books: ReaderProps['libraryBooks'];
-    close?: () => void;
-}) {
-    const navItems = [
-        { icon: DashboardIcon, label: 'Dashboard', href: '/dashboard' },
-        { icon: BookOpen, label: 'Read' },
-        { icon: NotebookPen, label: 'Notes', href: '/notes' },
-        { icon: Highlighter, label: 'Highlights', href: '/highlights' },
-        { icon: Bookmark, label: 'Bookmarks', href: '/bookmarks' },
-    ] as const;
-    return (
-        <div className="flex h-full flex-col bg-[#faf8f3]">
-            <div className="flex items-center justify-between px-8 pt-7 pb-8">
-                <Brand />
-                {close && (
-                    <button
-                        type="button"
-                        onClick={close}
-                        aria-label="Close library"
-                    >
-                        <X className="size-5" />
-                    </button>
-                )}
-            </div>
-            <nav className="px-5 font-serif text-[0.98rem] text-stone-700">
-                {navItems.map(({ icon: Icon, label, ...item }) => {
-                    const className = `mb-1 flex w-full cursor-pointer items-center gap-4 rounded-r-xl border-l-2 px-5 py-3 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#a95624] ${label === 'Read' ? 'border-[#b85f28] bg-[#f2ece3] text-[#94491e]' : 'border-transparent'}`;
-                    const content = (
-                        <>
-                            <Icon className="size-5" strokeWidth={1.6} />
-                            {label}
-                        </>
-                    );
-
-                    return 'href' in item ? (
-                        <Link
-                            key={label}
-                            href={item.href}
-                            className={className}
-                        >
-                            {content}
-                        </Link>
-                    ) : (
-                        <button key={label} type="button" className={className}>
-                            {content}
-                        </button>
-                    );
-                })}
-            </nav>
-            <div className="mx-10 my-5 border-t border-stone-200" />
-            <div className="min-h-0 flex-1 overflow-y-auto px-8 pb-10">
-                {(['old', 'new'] as const).map((testament) => {
-                    const testamentBooks = books.filter(
-                        (book) => book.testament === testament,
-                    );
-                    if (testamentBooks.length === 0) return null;
-
-                    return (
-                        <section key={testament}>
-                            <p className="sticky top-0 z-10 mb-2 bg-[#faf8f3] py-2 text-[0.63rem] font-semibold tracking-[0.26em] text-stone-500 uppercase">
-                                {testament === 'old'
-                                    ? 'Old Testament'
-                                    : 'New Testament'}
-                            </p>
-                            <div className="mb-4 font-serif text-[0.93rem] leading-[1.9] text-stone-600">
-                                {testamentBooks.map((libraryBook) => (
-                                    <Link
-                                        key={libraryBook.code}
-                                        href={libraryBook.readerUrl}
-                                        onClick={close}
-                                        className={`block w-full rounded-lg px-1 text-left ${libraryBook.code === activeBookCode ? 'font-semibold text-stone-950' : 'hover:text-stone-950'}`}
-                                    >
-                                        {libraryBook.name}
-                                    </Link>
-                                ))}
-                            </div>
-                        </section>
-                    );
-                })}
-            </div>
-        </div>
-    );
-}
-
 export default function Reader({
     canonicalUrl,
     edition,
@@ -1194,32 +259,70 @@ export default function Reader({
             window.document.documentElement.dataset.bookReadingTransition !==
                 undefined,
     );
-    const [loadedSource, setLoadedSource] = useState<{
-        url: string;
-        source: string;
-    }>(() => ({
-        url: book.sourceUrl,
-        source: cachedScriptureSource(book.sourceUrl) ?? '',
-    }));
-    const [comparisonSource, setComparisonSource] = useState<{
-        url: string;
-        source: string;
-    }>(() => ({
-        url: comparison?.book.sourceUrl ?? '',
-        source: comparison
-            ? (cachedScriptureSource(comparison.book.sourceUrl) ?? '')
-            : '',
-    }));
-    const [comparisonLoadError, setComparisonLoadError] = useState<string>();
+    useEffect(() => {
+        if (!bookReadingTransition) return;
+
+        let frame: number;
+        const finishWhenTransitionSettles = () => {
+            if (
+                window.document.documentElement.dataset
+                    .bookReadingTransition !== undefined
+            ) {
+                frame = window.requestAnimationFrame(
+                    finishWhenTransitionSettles,
+                );
+                return;
+            }
+
+            setBookReadingTransition(false);
+        };
+        frame = window.requestAnimationFrame(finishWhenTransitionSettles);
+
+        return () => window.cancelAnimationFrame(frame);
+    }, [bookReadingTransition]);
     const [mobileComparisonSide, setMobileComparisonSide] = useState<
         'primary' | 'comparison'
     >('primary');
-    const [loadError, setLoadError] = useState<string>();
-    const [preferences, setPreferences] = useState<OebVariantOptions>(() =>
-        savedPreferences(edition.slug),
+    const { preferences, typography, updatePreference, updateTypography } =
+        useReaderPreferences(edition.slug);
+    const primaryScripture = useMemo(
+        () => ({
+            sourceUrl: book.sourceUrl,
+            chapterUrl: book.chapterUrl,
+            chapter,
+            bookCode: book.code,
+            bookName: book.name,
+            edition,
+        }),
+        [
+            book.chapterUrl,
+            book.code,
+            book.name,
+            book.sourceUrl,
+            chapter,
+            edition,
+        ],
     );
-    const [typography, setTypography] =
-        useState<TypographyPreferences>(savedTypography);
+    const comparisonScripture = useMemo(
+        () =>
+            comparison
+                ? {
+                      sourceUrl: comparison.book.sourceUrl,
+                      chapterUrl: comparison.book.chapterUrl,
+                      chapter,
+                      bookCode: comparison.book.code,
+                      bookName: comparison.edition.name,
+                      edition: comparison.edition,
+                  }
+                : undefined,
+        [chapter, comparison],
+    );
+    const { document, loadError } = useReaderScripture(
+        primaryScripture,
+        preferences,
+    );
+    const { document: comparisonDocument, loadError: comparisonLoadError } =
+        useReaderScripture(comparisonScripture);
     const [editionPreferencesOpen, setEditionPreferencesOpen] = useState(false);
     const [translationOpen, setTranslationOpen] = useState(false);
     const [typographyOpen, setTypographyOpen] = useState(false);
@@ -1314,71 +417,6 @@ export default function Reader({
         },
         [],
     );
-
-    useEffect(() => {
-        let active = true;
-        setLoadError(undefined);
-        loadScriptureSource(book.sourceUrl)
-            .then((source) => {
-                if (active) setLoadedSource({ url: book.sourceUrl, source });
-            })
-            .catch((error: unknown) => {
-                if (!active) return;
-                setLoadError(
-                    error instanceof Error
-                        ? error.message.replace('Scripture', book.name)
-                        : `Unable to load ${book.name}`,
-                );
-            });
-        return () => {
-            active = false;
-        };
-    }, [book.name, book.sourceUrl]);
-
-    useEffect(() => {
-        if (!comparison) {
-            setComparisonLoadError(undefined);
-            return;
-        }
-
-        let active = true;
-        setComparisonLoadError(undefined);
-        loadScriptureSource(comparison.book.sourceUrl)
-            .then((source) => {
-                if (active) {
-                    setComparisonSource({
-                        url: comparison.book.sourceUrl,
-                        source,
-                    });
-                }
-            })
-            .catch((error: unknown) => {
-                if (!active) return;
-                setComparisonLoadError(
-                    error instanceof Error
-                        ? error.message
-                        : `Unable to load ${comparison.edition.name}`,
-                );
-            });
-
-        return () => {
-            active = false;
-        };
-    }, [comparison]);
-
-    useEffect(() => {
-        window.localStorage.setItem(
-            preferencesKey(edition.slug),
-            JSON.stringify(preferences),
-        );
-    }, [edition.slug, preferences]);
-
-    useEffect(() => {
-        window.localStorage.setItem(
-            typographyPreferencesKey,
-            JSON.stringify(typography),
-        );
-    }, [typography]);
 
     useEffect(() => {
         if (
@@ -1530,82 +568,13 @@ export default function Reader({
         };
     }, []);
 
-    const source =
-        loadedSource.url === book.sourceUrl && loadedSource.source
-            ? loadedSource.source
-            : undefined;
-    const document = useMemo(() => {
-        if (!source) return undefined;
-
-        const cacheKey = JSON.stringify({
-            sourceUrl: book.sourceUrl,
-            bookCode: book.code,
-            edition: edition.slug,
-            variantProfile: edition.variantProfile,
-            preferences:
-                edition.variantProfile === 'oeb' ? preferences : undefined,
-        });
-        const cached = documentCache.get(cacheKey);
-        if (cached) return rememberDocument(cacheKey, cached);
-
-        const parsed =
-            edition.variantProfile === 'oeb'
-                ? parseOeb(source, { variants: preferences })
-                : parseUsfm(source, {
-                      edition: {
-                          id: edition.slug,
-                          name: edition.name,
-                          abbreviation: edition.abbreviation,
-                          language: edition.language,
-                      },
-                      bookCode: book.code,
-                  });
-
-        return rememberDocument(cacheKey, parsed);
-    }, [book, edition, source, preferences]);
-    const comparisonDocument = useMemo(() => {
-        if (
-            !comparison ||
-            comparisonSource.url !== comparison.book.sourceUrl ||
-            !comparisonSource.source
-        ) {
-            return undefined;
-        }
-
-        const comparisonPreferences = savedPreferences(comparison.edition.slug);
-        const cacheKey = JSON.stringify({
-            sourceUrl: comparison.book.sourceUrl,
-            bookCode: comparison.book.code,
-            edition: comparison.edition.slug,
-            variantProfile: comparison.edition.variantProfile,
-            preferences:
-                comparison.edition.variantProfile === 'oeb'
-                    ? comparisonPreferences
-                    : undefined,
-        });
-        const cached = documentCache.get(cacheKey);
-        if (cached) return rememberDocument(cacheKey, cached);
-
-        const parsed =
-            comparison.edition.variantProfile === 'oeb'
-                ? parseOeb(comparisonSource.source, {
-                      variants: comparisonPreferences,
-                  })
-                : parseUsfm(comparisonSource.source, {
-                      edition: {
-                          id: comparison.edition.slug,
-                          name: comparison.edition.name,
-                          abbreviation: comparison.edition.abbreviation,
-                          language: comparison.edition.language,
-                      },
-                      bookCode: comparison.book.code,
-                  });
-
-        return rememberDocument(cacheKey, parsed);
-    }, [comparison, comparisonSource]);
     const chapters = useMemo(
-        () => (document ? chapterNumbers(document) : []),
-        [document],
+        () =>
+            Array.from(
+                { length: book.chapterCount },
+                (_, index) => `${index + 1}`,
+            ),
+        [book.chapterCount],
     );
     const fullContent = useMemo(
         () => (document ? readingItems(chapterContent(document, chapter)) : []),
@@ -1690,73 +659,13 @@ export default function Reader({
             window.cancelAnimationFrame(frame);
         };
     }, [book.code, bookReadingTransition, chapter, content]);
-    useEffect(() => {
-        const registry = (
-            CSS as unknown as {
-                highlights?: {
-                    set: (name: string, highlight: unknown) => void;
-                    delete: (name: string) => void;
-                };
-            }
-        ).highlights;
-        const HighlightConstructor = (
-            window as unknown as {
-                Highlight?: new (...ranges: Range[]) => unknown;
-            }
-        ).Highlight;
-        if (!registry || !HighlightConstructor) return;
-
-        const noteSelectionName = 'open-bible-note-selection';
-        const names = [
-            ...highlightColors.map(({ value }) => `open-bible-${value}`),
-            noteSelectionName,
-        ];
-        names.forEach((name) => registry.delete(name));
-
-        const ranges = new Map<HighlightColor, Range[]>();
-        highlightColors.forEach(({ value }) => ranges.set(value, []));
-        highlights.forEach((highlight) => {
-            highlight.segments.forEach((segment) => {
-                const verseElement =
-                    readerArticleRef.current?.querySelector<HTMLElement>(
-                        `[data-verse-number="${CSS.escape(segment.verse)}"]`,
-                    );
-                if (!verseElement) return;
-                const range = rangeForHighlightSegment(verseElement, segment);
-                if (range) ranges.get(highlight.color)?.push(range);
-            });
-        });
-
-        ranges.forEach((colorRanges, color) => {
-            if (colorRanges.length) {
-                registry.set(
-                    `open-bible-${color}`,
-                    new HighlightConstructor(...colorRanges),
-                );
-            }
-        });
-
-        const noteRanges = notes.flatMap((note) => {
-            if (note.anchorType !== 'selection') return [];
-            return note.segments.flatMap((segment) => {
-                const verseElement =
-                    readerArticleRef.current?.querySelector<HTMLElement>(
-                        `[data-verse-number="${CSS.escape(segment.verse)}"]`,
-                    );
-                if (!verseElement) return [];
-                const range = rangeForHighlightSegment(verseElement, segment);
-                return range ? [range] : [];
-            });
-        });
-        if (noteRanges.length) {
-            registry.set(
-                noteSelectionName,
-                new HighlightConstructor(...noteRanges),
-            );
-        }
-
-        return () => names.forEach((name) => registry.delete(name));
-    }, [content, highlights, notes]);
+    useReaderHighlights(
+        readerArticleRef,
+        content,
+        highlights,
+        notes,
+        highlightColorValues,
+    );
 
     useEffect(() => {
         const article = readerArticleRef.current;
@@ -1913,12 +822,9 @@ export default function Reader({
                 delete window.document.documentElement.dataset
                     .chapterTransitionFallback;
 
-                const entranceTargets = [
-                    readerArticleRef.current,
-                    ...(navigationPosition === 'page'
-                        ? [heroTextRef.current]
-                        : []),
-                ].filter((target): target is HTMLElement => target !== null);
+                const entranceTargets = [readerArticleRef.current].filter(
+                    (target): target is HTMLElement => target !== null,
+                );
                 const entrances = entranceTargets.map((target) =>
                     target.animate(
                         [
@@ -1943,6 +849,7 @@ export default function Reader({
                         .chapterTransitionDirection;
                     delete window.document.documentElement.dataset
                         .chapterTransitionPosition;
+                    releaseChapterNavigation();
                 });
             }
         }, 50);
@@ -1985,65 +892,7 @@ export default function Reader({
     const imagePosition = chapterArtwork
         ? `${chapterArtwork.focalPoint?.x ?? 50}% ${chapterArtwork.focalPoint?.y ?? 50}%`
         : undefined;
-    useEffect(() => {
-        const artwork = heroArtworkRef.current;
-        const text = heroTextRef.current;
-        if (!artwork && !text) return;
-
-        const reducedMotion = window.matchMedia(
-            '(prefers-reduced-motion: reduce)',
-        );
-        let animationFrame: number | undefined;
-
-        const update = () => {
-            animationFrame = undefined;
-            if (reducedMotion.matches) {
-                if (artwork) artwork.style.transform = '';
-                if (text) text.style.transform = '';
-                return;
-            }
-
-            const banner = (artwork ?? text)?.parentElement;
-            if (!banner) return;
-            const distance = Math.min(
-                Math.max(0, -banner.getBoundingClientRect().top),
-                banner.offsetHeight * 1.25,
-            );
-            if (artwork) {
-                artwork.style.transform = `translate3d(0, ${distance * 0.52}px, 0)`;
-            }
-            if (text) {
-                text.style.transform = `translate3d(0, ${distance * 0.24}px, 0)`;
-            }
-        };
-
-        const scheduleUpdate = () => {
-            if (animationFrame !== undefined) return;
-            animationFrame = window.requestAnimationFrame(update);
-        };
-
-        scheduleUpdate();
-        window.addEventListener('scroll', scheduleUpdate, { passive: true });
-        window.addEventListener('resize', scheduleUpdate);
-        reducedMotion.addEventListener('change', scheduleUpdate);
-
-        return () => {
-            window.removeEventListener('scroll', scheduleUpdate);
-            window.removeEventListener('resize', scheduleUpdate);
-            reducedMotion.removeEventListener('change', scheduleUpdate);
-            if (animationFrame !== undefined) {
-                window.cancelAnimationFrame(animationFrame);
-            }
-        };
-    }, [chapterArtwork]);
-    const updatePreference = <Key extends keyof OebVariantOptions>(
-        key: Key,
-        value: OebVariantOptions[Key],
-    ) => setPreferences((current) => ({ ...current, [key]: value }));
-    const updateTypography = <Key extends keyof TypographyPreferences>(
-        key: Key,
-        value: TypographyPreferences[Key],
-    ) => setTypography((current) => ({ ...current, [key]: value }));
+    useReaderParallax(heroArtworkRef, heroTextRef, chapterArtwork);
     const returnToBooks = (event: ReactMouseEvent<HTMLAnchorElement>) => {
         if (
             event.button !== 0 ||
@@ -2148,6 +997,9 @@ export default function Reader({
         );
     };
     const changeChapter = (nextChapter: string) => {
+        const navigationToken = beginChapterNavigation();
+        if (!navigationToken) return;
+
         const nextUrl = new URL(
             `/read/${book.code}/${nextChapter}`,
             window.location.origin,
@@ -2173,10 +1025,9 @@ export default function Reader({
             window.document.documentElement.dataset.chapterTransitionPosition =
                 navigationPosition;
 
-            const exitTargets = [
-                readerArticleRef.current,
-                ...(navigationPosition === 'page' ? [heroTextRef.current] : []),
-            ].filter((target): target is HTMLElement => target !== null);
+            const exitTargets = [readerArticleRef.current].filter(
+                (target): target is HTMLElement => target !== null,
+            );
             const exits = exitTargets.map((target) =>
                 target.animate(
                     [
@@ -2194,6 +1045,7 @@ export default function Reader({
                     'true';
                 router.visit(nextPath, {
                     preserveScroll: true,
+                    onError: () => releaseChapterNavigation(navigationToken),
                 });
             };
 
@@ -2218,8 +1070,71 @@ export default function Reader({
 
         router.visit(nextPath, {
             preserveScroll: false,
+            onFinish: () => releaseChapterNavigation(navigationToken),
         });
     };
+    const navigateToChapterFromShortcut = useEffectEvent(
+        (targetChapter: string) => changeChapter(targetChapter),
+    );
+    useEffect(() => {
+        const navigateWithKeyboard = (event: KeyboardEvent) => {
+            if (
+                event.repeat ||
+                !event.shiftKey ||
+                event.metaKey ||
+                event.ctrlKey ||
+                event.altKey ||
+                (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') ||
+                editionPreferencesOpen ||
+                translationOpen ||
+                typographyOpen ||
+                outlineOpen ||
+                bookmarkOpen ||
+                highlightOpen ||
+                noteOpen
+            ) {
+                return;
+            }
+
+            const target = event.target;
+            if (
+                target instanceof HTMLElement &&
+                (target.isContentEditable ||
+                    target.closest('input, textarea, select, [role="textbox"]'))
+            ) {
+                return;
+            }
+            if (
+                window.document.querySelector(
+                    '[role="listbox"], [role="menu"], [role="dialog"]',
+                )
+            ) {
+                return;
+            }
+
+            const targetIndex =
+                chapterIndex + (event.key === 'ArrowRight' ? 1 : -1);
+            const targetChapter = chapters[targetIndex];
+            if (!targetChapter) return;
+
+            event.preventDefault();
+            navigateToChapterFromShortcut(targetChapter);
+        };
+
+        window.addEventListener('keydown', navigateWithKeyboard);
+        return () =>
+            window.removeEventListener('keydown', navigateWithKeyboard);
+    }, [
+        bookmarkOpen,
+        chapterIndex,
+        chapters,
+        editionPreferencesOpen,
+        highlightOpen,
+        noteOpen,
+        outlineOpen,
+        translationOpen,
+        typographyOpen,
+    ]);
     const navigateToSection = (section: OutlineItem) => {
         setOutlineOpen(false);
         setTargetSectionKey(section.key);
@@ -2780,12 +1695,15 @@ export default function Reader({
             </Head>
             <div className="min-h-screen bg-[#eee9df] text-[#25221e] lg:pl-[15rem]">
                 <aside className="fixed inset-y-0 left-0 z-40 hidden w-[15rem] border-r border-stone-200 lg:block">
-                    <Library activeBookCode={book.code} books={libraryBooks} />
+                    <ReaderLibrary
+                        activeBookCode={book.code}
+                        books={libraryBooks}
+                    />
                 </aside>
 
                 <header className="absolute top-0 right-0 left-0 z-30 flex items-center justify-between px-6 py-5 lg:left-[15rem] lg:justify-end lg:px-12">
                     <div className="lg:hidden">
-                        <Brand />
+                        <ReaderBrand />
                     </div>
                     <div className="flex items-center gap-5 text-stone-950">
                         <Link
