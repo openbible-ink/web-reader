@@ -13,6 +13,7 @@ export interface ReaderEditionIdentity {
 
 export interface ReaderScriptureSource {
     chapterUrl: string;
+    initialDocument?: BibleDocument | null;
     chapter: string;
     sourceUrl: string;
     bookCode: string;
@@ -153,7 +154,9 @@ export function useReaderScripture(
     config: ReaderScriptureSource | undefined,
     preferences?: OebVariantOptions,
 ): { document?: BibleDocument; loadError?: string } {
-    const [document, setDocument] = useState<BibleDocument>();
+    const [document, setDocument] = useState<BibleDocument | undefined>(
+        config?.initialDocument ?? undefined,
+    );
     const [loadError, setLoadError] = useState<string>();
 
     useEffect(() => {
@@ -180,6 +183,10 @@ export function useReaderScripture(
         const cached = documentCache.get(cacheKey);
 
         setLoadError(undefined);
+        if (config.initialDocument && !needsOebProjection) {
+            setDocument(rememberDocument(cacheKey, config.initialDocument));
+            return;
+        }
         if (cached) {
             setDocument(rememberDocument(cacheKey, cached));
             return;

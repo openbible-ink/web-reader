@@ -20,6 +20,7 @@ class BookOverviewController extends Controller
                 'slug' => $edition->slug,
                 'name' => $edition->name,
                 'abbreviation' => $edition->abbreviation,
+                'language' => $edition->language,
             ],
             'book' => [
                 'code' => $book->book_code,

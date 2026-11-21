@@ -70,6 +70,7 @@ type DistributionItem = {
     testament?: 'old' | 'new';
     category?: string;
     count: number;
+    wordCount: number;
 };
 type Distribution = {
     books: DistributionItem[];
@@ -81,6 +82,7 @@ function DistributionChart({ distribution }: { distribution: Distribution }) {
     const [groupBy, setGroupBy] = useState<'books' | 'testaments'>('books');
     const [category, setCategory] = useState('all');
     const [hideEmptyBooks, setHideEmptyBooks] = useState(false);
+    const [normaliseByLength, setNormaliseByLength] = useState(false);
     const bookCategories = Array.from(
         new Set(
             distribution.books
@@ -96,7 +98,25 @@ function DistributionChart({ distribution }: { distribution: Distribution }) {
         groupBy === 'books'
             ? categoryBooks.filter((item) => !hideEmptyBooks || item.count > 0)
             : distribution.testaments;
-    const maximum = Math.max(...items.map((item) => item.count), 1);
+    const normalisationItems =
+        groupBy === 'books' ? categoryBooks : distribution.testaments;
+    const normalisationCount = normalisationItems.reduce(
+        (total, item) => total + item.count,
+        0,
+    );
+    const normalisationWords = normalisationItems.reduce(
+        (total, item) => total + item.wordCount,
+        0,
+    );
+    const averageFrequency =
+        normalisationWords > 0 ? normalisationCount / normalisationWords : 0;
+    const relativeDensity = (item: DistributionItem) =>
+        averageFrequency > 0 && item.wordCount > 0
+            ? item.count / item.wordCount / averageFrequency
+            : 0;
+    const metric = (item: DistributionItem) =>
+        normaliseByLength ? relativeDensity(item) : item.count;
+    const maximum = Math.max(...items.map(metric), 1);
     const displayedTotal = items.reduce((total, item) => total + item.count, 0);
 
     useEffect(() => {
@@ -118,15 +138,29 @@ function DistributionChart({ distribution }: { distribution: Distribution }) {
                             id="distribution-heading"
                             className="mt-1 font-serif text-2xl font-bold"
                         >
-                            Occurrences across scripture
+                            {normaliseByLength
+                                ? 'Relative density across scripture'
+                                : 'Occurrences across scripture'}
                         </h3>
                         <p className="mt-1 font-serif text-sm text-[#766d62]">
-                            {displayedTotal.toLocaleString()} total{' '}
-                            {displayedTotal === 1 ? 'instance' : 'instances'}{' '}
-                            {groupBy === 'books' && category !== 'all'
-                                ? `across ${category.toLowerCase()} books`
-                                : 'in the selected search scope'}
-                            .
+                            {normaliseByLength ? (
+                                <>
+                                    Relative frequency after correcting for
+                                    length. 1× is average for the displayed{' '}
+                                    {groupBy === 'books' ? 'books' : 'corpus'}.
+                                </>
+                            ) : (
+                                <>
+                                    {displayedTotal.toLocaleString()} total{' '}
+                                    {displayedTotal === 1
+                                        ? 'instance'
+                                        : 'instances'}{' '}
+                                    {groupBy === 'books' && category !== 'all'
+                                        ? `across ${category.toLowerCase()} books`
+                                        : 'in the selected search scope'}
+                                    .
+                                </>
+                            )}
                         </p>
                     </div>
                     <div
@@ -148,8 +182,8 @@ function DistributionChart({ distribution }: { distribution: Distribution }) {
                         ))}
                     </div>
                 </div>
-                {groupBy === 'books' && (
-                    <div className="mt-5 flex flex-wrap items-center gap-4">
+                <div className="mt-5 flex flex-wrap items-center gap-4">
+                    {groupBy === 'books' && (
                         <div className="min-w-44 flex-1">
                             <CustomSelect
                                 value={category}
@@ -166,6 +200,20 @@ function DistributionChart({ distribution }: { distribution: Distribution }) {
                                 triggerClassName="w-full bg-[#fffdf8]"
                             />
                         </div>
+                    )}
+                    <button
+                        type="button"
+                        aria-pressed={normaliseByLength}
+                        onClick={() =>
+                            setNormaliseByLength((current) => !current)
+                        }
+                        className={`cursor-pointer rounded-full border px-4 py-2 font-serif text-sm transition focus-visible:ring-2 focus-visible:ring-[#a95624] focus-visible:ring-offset-2 focus-visible:outline-none ${normaliseByLength ? 'border-[#8ca8b8] bg-[#e4eef3] font-semibold text-[#315b73]' : 'border-[#d2c4b4] bg-[#fffdf8] text-[#6f6255] hover:border-[#b9a38c] hover:text-[#3c342c]'}`}
+                    >
+                        {normaliseByLength
+                            ? 'Show raw counts'
+                            : 'Normalise by book length'}
+                    </button>
+                    {groupBy === 'books' && (
                         <button
                             type="button"
                             disabled={!hasEmptyBooks}
@@ -179,20 +227,24 @@ function DistributionChart({ distribution }: { distribution: Distribution }) {
                                 ? 'Show empty books'
                                 : 'Remove empty books'}
                         </button>
-                    </div>
-                )}
+                    )}
+                </div>
             </div>
             <div role="tabpanel" className="space-y-2 px-6 py-6 sm:px-8">
                 {items.map((item, index) => {
+                    const value = metric(item);
                     const width =
-                        item.count === 0
+                        value === 0
                             ? 0
-                            : Math.max((item.count / maximum) * 100, 1.5);
+                            : Math.max((value / maximum) * 100, 1.5);
+                    const valueLabel = normaliseByLength
+                        ? `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })} times the displayed average`
+                        : `${item.count} ${item.count === 1 ? 'instance' : 'instances'}`;
                     return (
                         <div
-                            key={`${groupBy}-${category}-${hideEmptyBooks}-${item.code ?? item.key}`}
+                            key={`${groupBy}-${category}-${hideEmptyBooks}-${normaliseByLength}-${item.code ?? item.key}`}
                             className="grid grid-cols-[minmax(7rem,10rem)_minmax(0,1fr)_3.5rem] items-center gap-3"
-                            aria-label={`${item.name}: ${item.count} ${item.count === 1 ? 'instance' : 'instances'}`}
+                            aria-label={`${item.name}: ${valueLabel}`}
                         >
                             <span
                                 className="truncate font-serif text-sm text-[#403830]"
@@ -210,7 +262,10 @@ function DistributionChart({ distribution }: { distribution: Distribution }) {
                                 />
                             </span>
                             <span className="text-right font-mono text-xs font-semibold text-[#715f50]">
-                                {item.count.toLocaleString()}
+                                {value.toLocaleString(undefined, {
+                                    maximumFractionDigits: 2,
+                                })}
+                                {normaliseByLength ? '×' : ''}
                             </span>
                         </div>
                     );

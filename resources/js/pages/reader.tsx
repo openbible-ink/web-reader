@@ -34,6 +34,7 @@ import {
 } from 'react';
 import { getBookGradient } from '@/lib/book-gradients';
 import { getCanonicalBookMetadata } from '@/lib/book-metadata';
+import { serialiseStructuredData } from '@/lib/seo';
 import type { InlineNode, NoteFieldNode, NoteNode } from 'usfm-parser';
 import { toast } from 'sonner';
 import NoteEditor from '@/components/note-editor';
@@ -289,6 +290,7 @@ export default function Reader({
         () => ({
             sourceUrl: book.sourceUrl,
             chapterUrl: book.chapterUrl,
+            initialDocument: book.initialDocument,
             chapter,
             bookCode: book.code,
             bookName: book.name,
@@ -297,6 +299,7 @@ export default function Reader({
         [
             book.chapterUrl,
             book.code,
+            book.initialDocument,
             book.name,
             book.sourceUrl,
             chapter,
@@ -309,6 +312,7 @@ export default function Reader({
                 ? {
                       sourceUrl: comparison.book.sourceUrl,
                       chapterUrl: comparison.book.chapterUrl,
+                      initialDocument: comparison.book.initialDocument,
                       chapter,
                       bookCode: comparison.book.code,
                       bookName: comparison.edition.name,
@@ -1660,7 +1664,68 @@ export default function Reader({
         return value >= start && value <= end;
     });
     const pageTitle = `${book.name} ${chapter} — ${edition.name}`;
-    const pageDescription = `Read ${book.name} chapter ${chapter} online in the ${edition.name} (${edition.abbreviation}).`;
+    const openingSection = outline[0]?.title;
+    const pageDescription = `Read ${book.name} chapter ${chapter}${openingSection ? ` — ${openingSection}` : ''} online in the ${edition.name} (${edition.abbreviation}).`;
+    const chapterText = fullContent
+        .filter(
+            (item): item is Extract<ReadingItem, { kind: 'verse' }> =>
+                item.kind === 'verse',
+        )
+        .map((item) => inlinePlainText(item.content))
+        .join(' ');
+    const bookUrl = new URL(`/books/${book.code}`, canonicalUrl).toString();
+    const structuredData = {
+        '@context': 'https://schema.org',
+        '@graph': [
+            {
+                '@type': 'WebPage',
+                '@id': `${canonicalUrl}#webpage`,
+                url: canonicalUrl,
+                name: pageTitle,
+                description: pageDescription,
+                inLanguage: edition.language,
+                mainEntity: { '@id': `${canonicalUrl}#chapter` },
+            },
+            {
+                '@type': 'Chapter',
+                '@id': `${canonicalUrl}#chapter`,
+                name: `${book.name} ${chapter}`,
+                headline: openingSection ?? `${book.name} chapter ${chapter}`,
+                position: Number(chapter),
+                text: chapterText,
+                inLanguage: edition.language,
+                isPartOf: {
+                    '@type': 'Book',
+                    '@id': `${bookUrl}#book`,
+                    name: book.longName ?? book.name,
+                    url: bookUrl,
+                },
+            },
+            {
+                '@type': 'BreadcrumbList',
+                itemListElement: [
+                    {
+                        '@type': 'ListItem',
+                        position: 1,
+                        name: 'Books',
+                        item: new URL('/books', canonicalUrl).toString(),
+                    },
+                    {
+                        '@type': 'ListItem',
+                        position: 2,
+                        name: book.name,
+                        item: bookUrl,
+                    },
+                    {
+                        '@type': 'ListItem',
+                        position: 3,
+                        name: `Chapter ${chapter}`,
+                        item: canonicalUrl,
+                    },
+                ],
+            },
+        ],
+    };
 
     return (
         <>
@@ -1678,6 +1743,11 @@ export default function Reader({
                 />
                 <meta head-key="og:type" property="og:type" content="article" />
                 <meta
+                    head-key="og:site_name"
+                    property="og:site_name"
+                    content="Open Bible"
+                />
+                <meta
                     head-key="og:title"
                     property="og:title"
                     content={pageTitle}
@@ -1691,6 +1761,27 @@ export default function Reader({
                     head-key="og:url"
                     property="og:url"
                     content={canonicalUrl}
+                />
+                {chapterArtwork && (
+                    <meta
+                        head-key="og:image"
+                        property="og:image"
+                        content={new URL(
+                            chapterArtwork.imageUrl,
+                            canonicalUrl,
+                        ).toString()}
+                    />
+                )}
+                <meta
+                    head-key="twitter:card"
+                    name="twitter:card"
+                    content={chapterArtwork ? 'summary_large_image' : 'summary'}
+                />
+                <script
+                    type="application/ld+json"
+                    dangerouslySetInnerHTML={{
+                        __html: serialiseStructuredData(structuredData),
+                    }}
                 />
             </Head>
             <div className="min-h-screen bg-[#eee9df] text-[#25221e] lg:pl-[15rem]">

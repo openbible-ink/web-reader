@@ -5,8 +5,10 @@ namespace App\Console\Commands;
 use App\Models\BibleBook;
 use App\Models\ScriptureSearchVerse;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 class IndexScriptureSearch extends Command
@@ -81,6 +83,10 @@ class IndexScriptureSearch extends Command
                 }
             }
         });
+
+        foreach ($books->pluck('edition_id')->unique() as $editionId) {
+            Cache::forever("scripture-search-index-version:{$editionId}", (string) Str::uuid());
+        }
 
         $this->info("Indexed {$count} verses from {$books->count()} books.");
 

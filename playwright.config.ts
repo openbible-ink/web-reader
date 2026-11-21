@@ -2,7 +2,9 @@ import { defineConfig, devices } from '@playwright/test';
 
 const serverCommand =
     'php artisan migrate:fresh --env=e2e --force --seed --seeder=EndToEndSeeder && ' +
-    'php artisan serve --env=e2e --no-reload --host=127.0.0.1 --port=8011';
+    'npx concurrently --kill-others --success first ' +
+    '"php artisan inertia:start-ssr --env=e2e" ' +
+    '"php artisan serve --env=e2e --no-reload --host=127.0.0.1 --port=8011"';
 
 export default defineConfig({
     testDir: './tests/e2e',

@@ -5,6 +5,7 @@ import SavedItemsPageShell from '@/components/saved-items-page-shell';
 import { getBookGradient } from '@/lib/book-gradients';
 import { getCanonicalBookMetadata } from '@/lib/book-metadata';
 import { loadScriptureChapter } from '@/lib/scripture-chapter-cache';
+import { serialiseStructuredData } from '@/lib/seo';
 
 interface BookOverviewProps {
     canonicalUrl: string;
@@ -12,6 +13,7 @@ interface BookOverviewProps {
         slug: string;
         name: string;
         abbreviation: string;
+        language: string;
     };
     book: {
         code: string;
@@ -48,10 +50,56 @@ export default function BookOverview({
           };
     const title = `${book.name} — ${edition.name}`;
     const description = `${metadata.description} Read ${book.longName ?? book.name} online in the ${edition.name} (${edition.abbreviation}).`;
+    const artworkUrl = metadata.artworkUrl
+        ? new URL(metadata.artworkUrl, canonicalUrl).toString()
+        : undefined;
     const chapterNumbers = Array.from(
         { length: book.chapterCount },
         (_, index) => index + 1,
     );
+    const structuredData = {
+        '@context': 'https://schema.org',
+        '@graph': [
+            {
+                '@type': 'Book',
+                '@id': `${canonicalUrl}#book`,
+                url: canonicalUrl,
+                name: book.longName ?? book.name,
+                alternateName: book.name,
+                description,
+                inLanguage: edition.language,
+                bookEdition: edition.name,
+                genre: metadata.category,
+                hasPart: chapterNumbers.map((chapter) => ({
+                    '@type': 'Chapter',
+                    position: chapter,
+                    name: `${book.name} ${chapter}`,
+                    url: new URL(
+                        `/read/${book.code}/${chapter}`,
+                        canonicalUrl,
+                    ).toString(),
+                })),
+                ...(artworkUrl ? { image: artworkUrl } : {}),
+            },
+            {
+                '@type': 'BreadcrumbList',
+                itemListElement: [
+                    {
+                        '@type': 'ListItem',
+                        position: 1,
+                        name: 'Books',
+                        item: new URL('/books', canonicalUrl).toString(),
+                    },
+                    {
+                        '@type': 'ListItem',
+                        position: 2,
+                        name: book.name,
+                        item: canonicalUrl,
+                    },
+                ],
+            },
+        ],
+    };
     const verseNumbers = Array.from(
         { length: Math.max(1, book.verseCounts[selectedChapter] ?? 0) },
         (_, index) => index + 1,
@@ -114,6 +162,11 @@ export default function BookOverview({
                     href={canonicalUrl}
                 />
                 <meta head-key="og:type" property="og:type" content="book" />
+                <meta
+                    head-key="og:site_name"
+                    property="og:site_name"
+                    content="Open Bible"
+                />
                 <meta head-key="og:title" property="og:title" content={title} />
                 <meta
                     head-key="og:description"
@@ -124,6 +177,24 @@ export default function BookOverview({
                     head-key="og:url"
                     property="og:url"
                     content={canonicalUrl}
+                />
+                {artworkUrl && (
+                    <meta
+                        head-key="og:image"
+                        property="og:image"
+                        content={artworkUrl}
+                    />
+                )}
+                <meta
+                    head-key="twitter:card"
+                    name="twitter:card"
+                    content={artworkUrl ? 'summary_large_image' : 'summary'}
+                />
+                <script
+                    type="application/ld+json"
+                    dangerouslySetInnerHTML={{
+                        __html: serialiseStructuredData(structuredData),
+                    }}
                 />
             </Head>
             <SavedItemsPageShell active="read">

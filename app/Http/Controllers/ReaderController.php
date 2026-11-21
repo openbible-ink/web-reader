@@ -125,6 +125,7 @@ class ReaderController extends Controller
                         'code' => $comparisonBook->book_code,
                         'sourceUrl' => asset($comparisonBook->source_path),
                         'chapterUrl' => $chapters->url($comparisonBook, $chapter),
+                        'initialDocument' => $chapters->payload($comparisonBook, $chapter)['document'] ?? null,
                     ],
                 ];
             }
@@ -167,6 +168,7 @@ class ReaderController extends Controller
                 'longName' => $book->long_name,
                 'sourceUrl' => asset($book->source_path),
                 'chapterUrl' => $chapters->url($book, $chapter),
+                'initialDocument' => $chapters->payload($book, $chapter)['document'] ?? null,
                 'chapterCount' => $book->chapter_count,
             ],
             'chapter' => $chapter,

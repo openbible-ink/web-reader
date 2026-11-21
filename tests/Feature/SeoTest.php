@@ -24,6 +24,12 @@ class SeoTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('canonicalUrl', route('books.show', ['book' => 'JHN'])));
+
+        $this->get('/books')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('canonicalUrl', route('books.index'))
+                ->where('edition.language', 'en'));
     }
 
     public function test_sitemap_lists_book_and_chapter_pages_once_across_editions(): void
@@ -33,10 +39,13 @@ class SeoTest extends TestCase
 
         $response = $this->get('/sitemap.xml')->assertOk();
 
-        $response->assertHeader('Content-Type', 'application/xml');
+        $response->assertHeader('Content-Type', 'application/xml; charset=UTF-8');
+        $this->assertSame(1, substr_count($response->getContent(), '<loc>'.route('books.index').'</loc>'));
         $this->assertSame(1, substr_count($response->getContent(), '/books/JHN'));
         $this->assertSame(1, substr_count($response->getContent(), '/read/JHN/1'));
         $this->assertSame(1, substr_count($response->getContent(), '/read/JHN/2'));
+        $this->assertStringContainsString('<changefreq>weekly</changefreq>', $response->getContent());
+        $this->assertStringContainsString('<priority>1.0</priority>', $response->getContent());
     }
 
     private function seedJohn(string $slug = 'oeb'): void

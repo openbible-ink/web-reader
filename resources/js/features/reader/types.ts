@@ -1,4 +1,4 @@
-import type { NoteNode } from 'usfm-parser';
+import type { BibleDocument, NoteNode } from 'usfm-parser';
 
 export interface ScriptureArtwork {
     id: string;
@@ -118,6 +118,7 @@ export interface ReaderProps {
         longName?: string | null;
         sourceUrl: string;
         chapterUrl: string;
+        initialDocument?: BibleDocument | null;
         chapterCount: number;
     };
     chapter: string;
@@ -146,6 +147,7 @@ export interface ReaderProps {
             code: string;
             sourceUrl: string;
             chapterUrl: string;
+            initialDocument?: BibleDocument | null;
         };
     } | null;
     libraryBooks: Array<{

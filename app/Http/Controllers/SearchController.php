@@ -14,12 +14,20 @@ use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class SearchController extends Controller
 {
+    private const PAGE_SIZE = 12;
+
+    private const REGEX_MAX_LENGTH = 120;
+
+    private const REGEX_CANDIDATE_LIMIT = 5000;
+
     public function __invoke(Request $request): Response|JsonResponse
     {
         $query = Str::of($request->string('q')->toString())->squish()->limit(160, '')->toString();
@@ -28,7 +36,7 @@ class SearchController extends Controller
         $books = $edition->books()->orderBy('canon_position')->get(['book_code', 'name', 'long_name', 'canon_position']);
         $parsed = $this->parseSearchQuery($query, $books);
         ['text' => $searchText, 'scopes' => $searchScopes, 'filters' => $searchFilters] = $parsed;
-        ['pattern' => $regex, 'error' => $regexError, 'wordAnchored' => $regexWordAnchored] = $this->compileRegex($searchText);
+        ['pattern' => $regex, 'databasePattern' => $databaseRegex, 'error' => $regexError, 'wordAnchored' => $regexWordAnchored] = $this->compileRegex($searchText);
         $tokenBookCodes = collect($searchFilters)->where('kind', 'book')->pluck('bookCode')->filter()->values();
         $effectiveBookCodes = $tokenBookCodes->when($bookCode !== '', fn ($codes) => $codes->push($bookCode))->unique()->values();
         $testaments = collect($searchFilters)->where('kind', 'testament')->pluck('value')->unique()->values();
@@ -47,9 +55,9 @@ class SearchController extends Controller
             })->unique()->values();
 
             $results = in_array('notes', $searchScopes, true)
-                ? $this->noteSearchResults($request, $effectiveBookCodes, $testaments, $categoryBookCodes, $terms, $regex, $regexWordAnchored)
+                ? $this->noteSearchResults($request, $effectiveBookCodes, $testaments, $categoryBookCodes, $terms, $regex, $databaseRegex, $regexWordAnchored)
                 : (in_array('headings', $searchScopes, true) || $regex !== null
-                ? $this->aggregatedSearchResults($request, $edition, $effectiveBookCodes, $testaments, $categoryBookCodes, $terms, $searchScopes, $regex, $regexWordAnchored)
+                ? $this->aggregatedSearchResults($request, $edition, $effectiveBookCodes, $testaments, $categoryBookCodes, $searchText, $terms, $searchScopes, $regex, $databaseRegex, $regexWordAnchored)
                 : ScriptureSearchVerse::query()
                     ->where('edition_id', $edition->id)
                     ->when($effectiveBookCodes->isNotEmpty(), fn (Builder $builder) => $builder->whereIn('book_code', $effectiveBookCodes))
@@ -62,15 +70,7 @@ class SearchController extends Controller
                         }
                     }))
                     ->when($categoryBookCodes->isNotEmpty(), fn (Builder $builder) => $builder->whereIn('book_code', $categoryBookCodes))
-                    ->when($terms->isNotEmpty(), function (Builder $builder) use ($columns, $terms): void {
-                        foreach ($terms as $term) {
-                            $builder->where(function (Builder $match) use ($columns, $term): void {
-                                foreach ($columns as $column) {
-                                    $this->addColumnTerm($match, $column, $term);
-                                }
-                            });
-                        }
-                    })
+                    ->when($terms->isNotEmpty(), fn (Builder $builder) => $this->applyScriptureTextSearch($builder, $columns, $terms))
                     ->when($terms->isEmpty(), function (Builder $builder) use ($columns): void {
                         $builder->where(function (Builder $match) use ($columns): void {
                             foreach ($columns as $column) {
@@ -87,7 +87,7 @@ class SearchController extends Controller
                     ->orderBy('canon_position')
                     ->orderByRaw('cast(chapter as integer)')
                     ->orderBy('verse')
-                    ->paginate(12)
+                    ->paginate(self::PAGE_SIZE)
                     ->withQueryString()
                     ->through(fn (ScriptureSearchVerse $verse) => [
                         'id' => $verse->id,
@@ -121,8 +121,10 @@ class SearchController extends Controller
                     $testaments,
                     $categoryBookCodes,
                     $terms,
+                    $searchText,
                     $searchScopes,
                     $regex,
+                    $databaseRegex,
                     $regexWordAnchored,
                 );
             }
@@ -175,8 +177,39 @@ class SearchController extends Controller
      * @param  array<int, string>  $searchScopes
      * @return array{books: array<int, array{code: string, name: string, testament: string, category: string, count: int}>, testaments: array<int, array{key: string, name: string, count: int}>, total: int}
      */
-    private function searchDistribution(BibleEdition $edition, Collection $books, Collection $bookCodes, Collection $testaments, Collection $categoryBookCodes, Collection $terms, array $searchScopes, ?string $regex, bool $regexWordAnchored): array
+    private function searchDistribution(BibleEdition $edition, Collection $books, Collection $bookCodes, Collection $testaments, Collection $categoryBookCodes, Collection $terms, string $searchText, array $searchScopes, ?string $regex, ?string $databaseRegex, bool $regexWordAnchored): array
     {
+        if ($regex === null) {
+            $indexVersion = Cache::get(
+                "scripture-search-index-version:{$edition->id}",
+                ScriptureSearchVerse::query()->where('edition_id', $edition->id)->max('updated_at'),
+            );
+            $cacheKey = 'search-distribution:'.sha1(json_encode([
+                'v3-relative-density',
+                $edition->id,
+                $indexVersion,
+                $bookCodes->all(),
+                $testaments->all(),
+                $categoryBookCodes->all(),
+                $searchText,
+                $searchScopes,
+            ], JSON_THROW_ON_ERROR));
+
+            return Cache::remember(
+                $cacheKey,
+                now()->addMinutes(15),
+                fn (): array => $this->databaseSearchDistribution(
+                    $edition,
+                    $books,
+                    $bookCodes,
+                    $testaments,
+                    $categoryBookCodes,
+                    $terms,
+                    $searchScopes,
+                ),
+            );
+        }
+
         $rows = ScriptureSearchVerse::query()
             ->where('edition_id', $edition->id)
             ->when($bookCodes->isNotEmpty(), fn (Builder $builder) => $builder->whereIn('book_code', $bookCodes))
@@ -189,7 +222,12 @@ class SearchController extends Controller
                 }
             }))
             ->when($categoryBookCodes->isNotEmpty(), fn (Builder $builder) => $builder->whereIn('book_code', $categoryBookCodes))
+            ->when(
+                DB::getDriverName() === 'pgsql' && $databaseRegex !== null,
+                fn (Builder $builder) => $this->applyScriptureRegexSearch($builder, $searchScopes, $databaseRegex),
+            )
             ->orderBy('canon_position')
+            ->limit(self::REGEX_CANDIDATE_LIMIT)
             ->get(['book_code', 'canon_position', 'chapter', 'section_key', 'section_title', 'footnote_text', 'text']);
 
         $counts = collect();
@@ -212,9 +250,7 @@ class SearchController extends Controller
             }
 
             $haystack = Str::lower($values->join(' '));
-            $matches = $regex !== null
-                ? $this->matchesRegex($haystack, $regex, $regexWordAnchored)
-                : ($terms->isNotEmpty() && $terms->every(fn (string $term) => str_contains($haystack, $term)));
+            $matches = $this->matchesRegex($haystack, $regex, $regexWordAnchored);
             if (! $matches) {
                 continue;
             }
@@ -225,21 +261,154 @@ class SearchController extends Controller
             }
         }
 
-        $bookDistribution = $books->map(fn (BibleBook $book) => [
-            'code' => $book->book_code,
-            'name' => $book->name,
-            'testament' => ($book->canon_position ?? 40) <= 39 ? 'old' : 'new',
-            'category' => CanonicalBookMetadata::category($book->book_code),
-            'count' => (int) $counts->get($book->book_code, 0),
-        ])->values();
+        $wordCounts = $this->bookWordCounts($edition);
+        $bookDistribution = $books->map(function (BibleBook $book) use ($counts, $wordCounts): array {
+            $count = (int) $counts->get($book->book_code, 0);
+            $wordCount = (int) $wordCounts->get($book->book_code, 0);
+
+            return [
+                'code' => $book->book_code,
+                'name' => $book->name,
+                'testament' => ($book->canon_position ?? 40) <= 39 ? 'old' : 'new',
+                'category' => CanonicalBookMetadata::category($book->book_code),
+                'count' => $count,
+                'wordCount' => $wordCount,
+            ];
+        })->values();
+
+        $oldTestament = $bookDistribution->where('testament', 'old');
+        $newTestament = $bookDistribution->where('testament', 'new');
 
         return [
             'books' => $bookDistribution->all(),
             'testaments' => [
-                ['key' => 'old', 'name' => 'Old Testament', 'count' => (int) $bookDistribution->where('testament', 'old')->sum('count')],
-                ['key' => 'new', 'name' => 'New Testament', 'count' => (int) $bookDistribution->where('testament', 'new')->sum('count')],
+                $this->testamentDistribution('old', 'Old Testament', $oldTestament),
+                $this->testamentDistribution('new', 'New Testament', $newTestament),
             ],
             'total' => (int) $bookDistribution->sum('count'),
+        ];
+    }
+
+    /**
+     * Aggregate ordinary search distributions inside the database. Only the
+     * small per-book totals are transferred to PHP.
+     *
+     * @param  Collection<int, BibleBook>  $books
+     * @param  Collection<int, string>  $bookCodes
+     * @param  Collection<int, string>  $testaments
+     * @param  Collection<int, string>  $categoryBookCodes
+     * @param  Collection<int, string>  $terms
+     * @param  array<int, string>  $searchScopes
+     * @return array{books: array<int, array{code: string, name: string, testament: string, category: string, count: int}>, testaments: array<int, array{key: string, name: string, count: int}>, total: int}
+     */
+    private function databaseSearchDistribution(BibleEdition $edition, Collection $books, Collection $bookCodes, Collection $testaments, Collection $categoryBookCodes, Collection $terms, array $searchScopes): array
+    {
+        $columns = collect($searchScopes)->map(fn (string $scope) => match ($scope) {
+            'headings' => 'section_title',
+            'footnotes' => 'footnote_text',
+            default => 'text',
+        })->unique()->values();
+        $base = ScriptureSearchVerse::query()
+            ->where('edition_id', $edition->id)
+            ->when($bookCodes->isNotEmpty(), fn (Builder $builder) => $builder->whereIn('book_code', $bookCodes))
+            ->when($testaments->isNotEmpty(), fn (Builder $builder) => $builder->where(function (Builder $query) use ($testaments): void {
+                if ($testaments->contains('old')) {
+                    $query->orWhereBetween('canon_position', [1, 39]);
+                }
+                if ($testaments->contains('new')) {
+                    $query->orWhere('canon_position', '>=', 40);
+                }
+            }))
+            ->when($categoryBookCodes->isNotEmpty(), fn (Builder $builder) => $builder->whereIn('book_code', $categoryBookCodes));
+
+        $this->applyScriptureTextSearch($base, $columns, $terms);
+        $counts = collect();
+
+        foreach ($columns as $column) {
+            $source = clone $base;
+            $source->whereNotNull($column)->where($column, '!=', '');
+
+            if ($column === 'section_title') {
+                $source = ScriptureSearchVerse::query()
+                    ->fromSub(
+                        $source->select(['book_code', 'chapter', 'section_key', 'section_title'])->distinct(),
+                        'matching_headings',
+                    );
+            }
+
+            foreach ($terms as $term) {
+                $scopeCounts = (clone $source)
+                    ->select('book_code')
+                    ->selectRaw(match ($column) {
+                        'section_title' => "sum((length(lower(section_title)) - length(replace(lower(section_title), ?, ''))) / nullif(length(?), 0)) as match_count",
+                        'footnote_text' => "sum((length(lower(footnote_text)) - length(replace(lower(footnote_text), ?, ''))) / nullif(length(?), 0)) as match_count",
+                        default => "sum((length(lower(text)) - length(replace(lower(text), ?, ''))) / nullif(length(?), 0)) as match_count",
+                    }, [$term, $term])
+                    ->groupBy('book_code')
+                    ->pluck('match_count', 'book_code');
+
+                foreach ($scopeCounts as $code => $count) {
+                    $counts->put($code, (int) $counts->get($code, 0) + (int) $count);
+                }
+            }
+        }
+
+        $wordCounts = $this->bookWordCounts($edition);
+        $bookDistribution = $books->map(function (BibleBook $book) use ($counts, $wordCounts): array {
+            $count = (int) $counts->get($book->book_code, 0);
+            $wordCount = (int) $wordCounts->get($book->book_code, 0);
+
+            return [
+                'code' => $book->book_code,
+                'name' => $book->name,
+                'testament' => ($book->canon_position ?? 40) <= 39 ? 'old' : 'new',
+                'category' => CanonicalBookMetadata::category($book->book_code),
+                'count' => $count,
+                'wordCount' => $wordCount,
+            ];
+        })->values();
+
+        $oldTestament = $bookDistribution->where('testament', 'old');
+        $newTestament = $bookDistribution->where('testament', 'new');
+
+        return [
+            'books' => $bookDistribution->all(),
+            'testaments' => [
+                $this->testamentDistribution('old', 'Old Testament', $oldTestament),
+                $this->testamentDistribution('new', 'New Testament', $newTestament),
+            ],
+            'total' => (int) $bookDistribution->sum('count'),
+        ];
+    }
+
+    /** @return Collection<string, int> */
+    private function bookWordCounts(BibleEdition $edition): Collection
+    {
+        return ScriptureSearchVerse::query()
+            ->where('edition_id', $edition->id)
+            ->select('book_code')
+            ->selectRaw(DB::getDriverName() === 'pgsql'
+                ? "sum(case when btrim(coalesce(text, '')) = '' then 0 else coalesce(array_length(regexp_split_to_array(btrim(text), E'\\\\s+'), 1), 0) end) as word_count"
+                : "sum(case when trim(text) = '' then 0 else length(trim(text)) - length(replace(trim(text), ' ', '')) + 1 end) as word_count")
+            ->groupBy('book_code')
+            ->pluck('word_count', 'book_code')
+            ->map(fn ($count): int => (int) $count);
+    }
+
+    /**
+     * @param  Collection<int, array{code: string, name: string, testament: string, category: string, count: int, wordCount: int}>  $books
+     * @return array{key: string, name: string, count: int, wordCount: int}
+     */
+    private function testamentDistribution(string $key, string $name, Collection $books): array
+    {
+        $count = (int) $books->sum('count');
+        $wordCount = (int) $books->sum('wordCount');
+
+        return [
+            'key' => $key,
+            'name' => $name,
+            'count' => $count,
+            'wordCount' => $wordCount,
         ];
     }
 
@@ -329,51 +498,77 @@ class SearchController extends Controller
      * @param  Collection<int, string>  $terms
      * @return LengthAwarePaginator<int, array<string, mixed>>
      */
-    private function noteSearchResults(Request $request, Collection $bookCodes, Collection $testaments, Collection $categoryBookCodes, Collection $terms, ?string $regex, bool $regexWordAnchored): LengthAwarePaginator
+    private function noteSearchResults(Request $request, Collection $bookCodes, Collection $testaments, Collection $categoryBookCodes, Collection $terms, ?string $regex, ?string $databaseRegex, bool $regexWordAnchored): LengthAwarePaginator
     {
-        $notes = $request->user()
-            ? $request->user()->notes()->with(['book.edition', 'tags'])->latest('updated_at')->get()
-            : collect();
+        if (! $request->user()) {
+            return Note::query()->whereRaw('1 = 0')->paginate(self::PAGE_SIZE)->through(
+                fn (Note $note): array => $this->serializeNoteSearchResult($note),
+            );
+        }
 
-        $notes = $notes
-            ->filter(function (Note $note) use ($bookCodes, $testaments, $categoryBookCodes, $terms, $regex, $regexWordAnchored): bool {
-                if ($bookCodes->isNotEmpty() && ! $bookCodes->contains($note->book_code)) {
-                    return false;
-                }
-                if ($categoryBookCodes->isNotEmpty() && ! $categoryBookCodes->contains($note->book_code)) {
-                    return false;
-                }
-                $canonPosition = $note->book->canon_position ?? 40;
-                if ($testaments->isNotEmpty()
-                    && ! ($testaments->contains('old') && $canonPosition <= 39)
-                    && ! ($testaments->contains('new') && $canonPosition >= 40)) {
-                    return false;
-                }
+        $query = $request->user()->notes()
+            ->with(['book.edition', 'tags'])
+            ->when($bookCodes->isNotEmpty(), fn (Builder $builder) => $builder->whereIn('book_code', $bookCodes))
+            ->when($categoryBookCodes->isNotEmpty(), fn (Builder $builder) => $builder->whereIn('book_code', $categoryBookCodes))
+            ->when($testaments->isNotEmpty(), fn (Builder $builder) => $builder->whereHas('book', function (Builder $book) use ($testaments): void {
+                $book->where(function (Builder $canon) use ($testaments): void {
+                    if ($testaments->contains('old')) {
+                        $canon->orWhereBetween('canon_position', [1, 39]);
+                    }
+                    if ($testaments->contains('new')) {
+                        $canon->orWhere('canon_position', '>=', 40);
+                    }
+                });
+            }));
 
-                $haystack = Str::lower(implode(' ', [
-                    $note->title,
-                    $note->body_markdown,
-                    $note->section_title,
-                    $note->selected_text,
-                    $note->tags->pluck('name')->join(' '),
-                ]));
+        if ($regex !== null && DB::getDriverName() !== 'pgsql') {
+            $notes = $query->latest('updated_at')->limit(self::REGEX_CANDIDATE_LIMIT)->get()
+                ->filter(function (Note $note) use ($regex, $regexWordAnchored): bool {
+                    $haystack = implode(' ', [
+                        $note->title,
+                        $note->body_markdown,
+                        $note->section_title,
+                        $note->selected_text,
+                        $note->tags->pluck('name')->join(' '),
+                    ]);
 
-                return $regex !== null
-                    ? $this->matchesRegex($haystack, $regex, $regexWordAnchored)
-                    : ($terms->isEmpty() || $terms->every(fn (string $term) => str_contains($haystack, $term)));
-            })
-            ->map(fn (Note $note): array => $this->serializeNoteSearchResult($note))
-            ->values();
+                    return $this->matchesRegex($haystack, $regex, $regexWordAnchored);
+                });
+            $page = LengthAwarePaginator::resolveCurrentPage();
 
-        $page = LengthAwarePaginator::resolveCurrentPage();
+            return new LengthAwarePaginator(
+                $notes->forPage($page, self::PAGE_SIZE)->map(fn (Note $note): array => $this->serializeNoteSearchResult($note))->values(),
+                $notes->count(),
+                self::PAGE_SIZE,
+                $page,
+                ['path' => $request->url(), 'query' => $request->query()],
+            );
+        }
 
-        return new LengthAwarePaginator(
-            $notes->forPage($page, 12)->values(),
-            $notes->count(),
-            12,
-            $page,
-            ['path' => $request->url(), 'query' => $request->query()],
-        );
+        if ($regex !== null && $databaseRegex !== null) {
+            $query->where(function (Builder $match) use ($databaseRegex): void {
+                $match->whereRaw("concat_ws(' ', title, body_markdown, section_title, selected_text) ~* ?", [$databaseRegex])
+                    ->orWhereHas('tags', fn (Builder $tags) => $tags->whereRaw('name ~* ?', [$databaseRegex]));
+            });
+        } elseif ($terms->isNotEmpty()) {
+            foreach ($terms as $term) {
+                $query->where(function (Builder $match) use ($term): void {
+                    if (DB::getDriverName() === 'pgsql') {
+                        $match->whereRaw("search_vector @@ plainto_tsquery('english', ?)", [$term]);
+                    } else {
+                        $value = '%'.$this->escapeLike($term).'%';
+                        $match->whereRaw("lower(title || ' ' || body_markdown || ' ' || coalesce(section_title, '') || ' ' || coalesce(selected_text, '')) like ? escape '\\'", [$value]);
+                    }
+                    $match->orWhereHas('tags', fn (Builder $tags) => $tags->whereRaw('lower(name) like ?', ['%'.$this->escapeLike($term).'%']));
+                });
+            }
+        }
+
+        return $query
+            ->latest('updated_at')
+            ->paginate(self::PAGE_SIZE)
+            ->withQueryString()
+            ->through(fn (Note $note): array => $this->serializeNoteSearchResult($note));
     }
 
     /**
@@ -384,7 +579,7 @@ class SearchController extends Controller
      * @param  array<int, string>  $searchScopes
      * @return LengthAwarePaginator<int, array<string, mixed>>
      */
-    private function aggregatedSearchResults(Request $request, BibleEdition $edition, Collection $bookCodes, Collection $testaments, Collection $categoryBookCodes, Collection $terms, array $searchScopes, ?string $regex = null, bool $regexWordAnchored = false): LengthAwarePaginator
+    private function aggregatedSearchResults(Request $request, BibleEdition $edition, Collection $bookCodes, Collection $testaments, Collection $categoryBookCodes, string $searchText, Collection $terms, array $searchScopes, ?string $regex = null, ?string $databaseRegex = null, bool $regexWordAnchored = false): LengthAwarePaginator
     {
         $columns = collect($searchScopes)->map(fn (string $scope) => match ($scope) {
             'headings' => 'section_title',
@@ -403,15 +598,11 @@ class SearchController extends Controller
                 }
             }))
             ->when($categoryBookCodes->isNotEmpty(), fn (Builder $builder) => $builder->whereIn('book_code', $categoryBookCodes))
-            ->when($terms->isNotEmpty(), function (Builder $builder) use ($columns, $terms): void {
-                foreach ($terms as $term) {
-                    $builder->where(function (Builder $match) use ($columns, $term): void {
-                        foreach ($columns as $column) {
-                            $this->addColumnTerm($match, $column, $term);
-                        }
-                    });
-                }
-            })
+            ->when($terms->isNotEmpty(), fn (Builder $builder) => $this->applyScriptureTextSearch($builder, $columns, $terms))
+            ->when(
+                $regex !== null && DB::getDriverName() === 'pgsql' && $databaseRegex !== null,
+                fn (Builder $builder) => $this->applyScriptureRegexSearch($builder, $searchScopes, $databaseRegex),
+            )
             ->when($terms->isEmpty(), function (Builder $builder) use ($columns): void {
                 $builder->where(function (Builder $match) use ($columns): void {
                     foreach ($columns as $column) {
@@ -423,6 +614,7 @@ class SearchController extends Controller
             })
             ->orderBy('canon_position')
             ->orderByRaw('cast(chapter as integer)')
+            ->when($regex !== null, fn (Builder $builder) => $builder->limit(self::REGEX_CANDIDATE_LIMIT))
             ->get()
             ->sort(fn (ScriptureSearchVerse $left, ScriptureSearchVerse $right) => ($left->canon_position <=> $right->canon_position)
                 ?: ((int) $left->chapter <=> (int) $right->chapter)
@@ -524,33 +716,52 @@ class SearchController extends Controller
         return new LengthAwarePaginator(
             $results->forPage($page, 12)->values(),
             $results->count(),
-            12,
+            self::PAGE_SIZE,
             $page,
             ['path' => $request->url(), 'query' => $request->query()],
         );
     }
 
-    /** @return array{pattern: string|null, error: string|null, wordAnchored: bool} */
+    /** @return array{pattern: string|null, databasePattern: string|null, error: string|null, wordAnchored: bool} */
     private function compileRegex(string $searchText): array
     {
         if (mb_strlen($searchText) < 3 || ! str_starts_with($searchText, '/') || ! str_ends_with($searchText, '/')) {
-            return ['pattern' => null, 'error' => null, 'wordAnchored' => false];
+            return ['pattern' => null, 'databasePattern' => null, 'error' => null, 'wordAnchored' => false];
         }
 
         $body = substr($searchText, 1, -1);
         if ($body === '') {
-            return ['pattern' => null, 'error' => 'Enter a pattern between the forward slashes.', 'wordAnchored' => false];
+            return ['pattern' => null, 'databasePattern' => null, 'error' => 'Enter a pattern between the forward slashes.', 'wordAnchored' => false];
+        }
+        if (mb_strlen($body) > self::REGEX_MAX_LENGTH) {
+            return ['pattern' => null, 'databasePattern' => null, 'error' => 'Keep regular expressions to 120 characters or fewer.', 'wordAnchored' => false];
+        }
+        if (preg_match('/\(\?|\\\\[1-9]|\\\\g|\\\\k|\(\*|\([^)]*[+*][^)]*\)[+*{]/u', $body) === 1) {
+            return ['pattern' => null, 'databasePattern' => null, 'error' => 'This pattern uses a potentially expensive regular-expression feature. Try a simpler expression.', 'wordAnchored' => false];
+        }
+        if (preg_match('/\\\\(?:p|P|x|u|R|X|C|K|N|Q|E)/u', $body) === 1) {
+            return ['pattern' => null, 'databasePattern' => null, 'error' => 'This regular-expression escape is not supported. Try a simpler cross-platform pattern.', 'wordAnchored' => false];
+        }
+        if (preg_match_all('/[\p{L}\p{N}]/u', $body) < 2) {
+            return ['pattern' => null, 'databasePattern' => null, 'error' => 'Include at least two letters or numbers in a regular expression.', 'wordAnchored' => false];
         }
 
         $pattern = '~(*LIMIT_MATCH=100000)(*LIMIT_RECURSION=10000)(?:'.str_replace('~', '\\~', $body).')~iu';
         if (@preg_match($pattern, '') === false) {
-            return ['pattern' => null, 'error' => 'This regular expression is not valid. Check its brackets and escape characters.', 'wordAnchored' => false];
+            return ['pattern' => null, 'databasePattern' => null, 'error' => 'This regular expression is not valid. Check its brackets and escape characters.', 'wordAnchored' => false];
         }
+
+        $wordAnchored = str_starts_with($body, '^') && str_ends_with($body, '$') && preg_match('/\s/u', $body) !== 1;
+
+        $databaseBody = str_replace(['\\b', '\\B'], ['\\y', '\\Y'], $body);
 
         return [
             'pattern' => $pattern,
+            'databasePattern' => $wordAnchored
+                ? '\\m(?:'.substr($databaseBody, 1, -1).')\\M'
+                : $databaseBody,
             'error' => null,
-            'wordAnchored' => str_starts_with($body, '^') && str_ends_with($body, '$') && preg_match('/\s/u', $body) !== 1,
+            'wordAnchored' => $wordAnchored,
         ];
     }
 
@@ -662,6 +873,57 @@ class SearchController extends Controller
     private function escapeLike(string $value): string
     {
         return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value);
+    }
+
+    /**
+     * @param  Builder<ScriptureSearchVerse>  $query
+     * @param  Collection<int, string>  $columns
+     * @param  Collection<int, string>  $terms
+     */
+    private function applyScriptureTextSearch(Builder $query, Collection $columns, Collection $terms): void
+    {
+        if (DB::getDriverName() === 'pgsql') {
+            foreach ($terms as $term) {
+                $query->where(function (Builder $match) use ($columns, $term): void {
+                    $function = str_contains($term, ' ') ? 'phraseto_tsquery' : 'plainto_tsquery';
+                    foreach ($columns as $column) {
+                        $vector = match ($column) {
+                            'section_title' => 'heading_search_vector',
+                            'footnote_text' => 'footnote_search_vector',
+                            default => 'text_search_vector',
+                        };
+                        $match->orWhereRaw("{$vector} @@ {$function}('english', ?)", [$term]);
+                    }
+                });
+            }
+
+            return;
+        }
+
+        foreach ($terms as $term) {
+            $query->where(function (Builder $match) use ($columns, $term): void {
+                foreach ($columns as $column) {
+                    $this->addColumnTerm($match, $column, $term);
+                }
+            });
+        }
+    }
+
+    /** @param Builder<ScriptureSearchVerse> $query
+     * @param  array<int, string>  $searchScopes
+     */
+    private function applyScriptureRegexSearch(Builder $query, array $searchScopes, string $databaseRegex): void
+    {
+        $query->where(function (Builder $match) use ($searchScopes, $databaseRegex): void {
+            foreach ($searchScopes as $scope) {
+                $column = match ($scope) {
+                    'headings' => 'section_title',
+                    'footnotes' => 'footnote_text',
+                    default => 'text',
+                };
+                $match->orWhereRaw("coalesce({$column}, '') ~* ?", [$databaseRegex]);
+            }
+        });
     }
 
     /** @param Builder<ScriptureSearchVerse> $query */

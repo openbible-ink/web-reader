@@ -15,8 +15,8 @@
         "format": "prettier --write resources/js resources/css scripts tests/e2e *.ts *.js *.json \"docs/**/*.md\" .github/workflows",
         "format:check": "prettier --check resources/js resources/css scripts tests/e2e *.ts *.js *.json \"docs/**/*.md\" .github/workflows",
         "audit:dependencies": "npm audit --omit=dev --audit-level=high",
-        "test:e2e": "npm run scripture:compile && npm run build && playwright test",
-        "test:e2e:ui": "npm run build && playwright test --ui",
+        "test:e2e": "npm run scripture:compile && npm run build:ssr && playwright test",
+        "test:e2e:ui": "npm run build:ssr && playwright test --ui",
         "performance:check": "node scripts/check-performance-budget.mjs",
         "scripture:compile": "node scripts/compile-scripture-chapters.mjs"
     },

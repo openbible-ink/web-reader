@@ -78,9 +78,11 @@ class ScriptureSearchTest extends TestCase
                 ->where('distribution.books.0.code', 'GEN')
                 ->where('distribution.books.0.category', 'Pentateuch')
                 ->where('distribution.books.0.count', 2)
+                ->where('distribution.books.0.wordCount', 7)
                 ->where('distribution.books.1.code', 'JHN')
                 ->where('distribution.books.1.category', 'Gospel')
                 ->where('distribution.books.1.count', 1)
+                ->where('distribution.books.1.wordCount', 20)
                 ->where('distribution.testaments.0.key', 'old')
                 ->where('distribution.testaments.0.count', 2)
                 ->where('distribution.testaments.1.key', 'new')
@@ -139,6 +141,34 @@ class ScriptureSearchTest extends TestCase
                 ->where('results.data.0.kind', 'note')
                 ->where('results.data.0.title', 'A question about darkness')
                 ->where('results.data.0.url', "/notes/{$note->id}"));
+    }
+
+    public function test_note_search_is_paginated_by_the_database(): void
+    {
+        $edition = $this->catalogue();
+        $book = $edition->books()->where('book_code', 'JHN')->firstOrFail();
+        $user = User::factory()->create();
+
+        foreach (range(1, 13) as $index) {
+            $user->notes()->create([
+                'bible_book_id' => $book->id,
+                'book_code' => 'JHN',
+                'chapter' => '8',
+                'anchor_type' => 'verse',
+                'title' => "Indexed note {$index}",
+                'body_markdown' => 'A searchable production-scale observation.',
+                'verse_start' => '12',
+                'verse_end' => '12',
+            ]);
+        }
+
+        $this->actingAs($user)->get('/search?q=production-scale+in%3Anotes&page=2')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('results.total', 13)
+                ->where('results.per_page', 12)
+                ->where('results.current_page', 2)
+                ->has('results.data', 1));
     }
 
     public function test_quoted_text_matches_an_exact_contiguous_phrase(): void
@@ -271,11 +301,38 @@ class ScriptureSearchTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('results.total', 2));
 
+        $this->get('/search?q=%2F%5Cblight%5Cb%2F+in%3Averse')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('isRegex', true)
+                ->where('regexError', null)
+                ->where('results.total', 1)
+                ->where('results.data.0.verse', '12'));
+
         $this->get('/search?q=%2F%5Blight%2F')
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->where('isRegex', false)
                 ->where('regexError', 'This regular expression is not valid. Check its brackets and escape characters.')
+                ->where('results', null));
+    }
+
+    public function test_it_rejects_expensive_or_unbounded_regular_expressions(): void
+    {
+        $this->catalogue();
+
+        $this->get('/search?q=%2F%28light%2B%29%2B%2F')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('isRegex', false)
+                ->where('regexError', 'This pattern uses a potentially expensive regular-expression feature. Try a simpler expression.')
+                ->where('results', null));
+
+        $this->get('/search?q=%2F.%2A%2F')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('isRegex', false)
+                ->where('regexError', 'Include at least two letters or numbers in a regular expression.')
                 ->where('results', null));
     }
 

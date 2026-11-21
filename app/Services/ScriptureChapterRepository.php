@@ -32,6 +32,24 @@ class ScriptureChapterRepository
         ]);
     }
 
+    /** @return array<string, mixed>|null */
+    public function payload(BibleBook $book, string|int $chapter): ?array
+    {
+        $path = $this->path($book, $chapter);
+        if (! File::isFile($path)) {
+            return null;
+        }
+
+        $json = gzdecode(File::get($path));
+        if ($json === false) {
+            return null;
+        }
+
+        $payload = json_decode($json, true);
+
+        return is_array($payload) ? $payload : null;
+    }
+
     /** @return array<int, int> */
     public function verseCounts(BibleBook $book): array
     {

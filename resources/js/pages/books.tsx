@@ -4,6 +4,7 @@ import { getCanonicalBookMetadata } from '@/lib/book-metadata';
 import { Head, Link } from '@inertiajs/react';
 import { ArrowLeft, ArrowRight, Search } from 'lucide-react';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { serialiseStructuredData } from '@/lib/seo';
 
 interface Book {
     code: string;
@@ -13,6 +14,8 @@ interface Book {
 }
 
 interface BooksProps {
+    canonicalUrl: string;
+    edition: { name: string; abbreviation: string; language: string };
     books: Book[];
 }
 
@@ -194,7 +197,7 @@ function BookShelf({
     );
 }
 
-export default function Books({ books }: BooksProps) {
+export default function Books({ books, canonicalUrl, edition }: BooksProps) {
     const [query, setQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<string | null>(
         null,
@@ -242,6 +245,34 @@ export default function Books({ books }: BooksProps) {
         window.sessionStorage.setItem('books-scroll-y', String(window.scrollY));
         setTransitioningBook(bookCode);
     };
+    const title = `Books of the Bible — ${edition.name}`;
+    const description = `Browse every available book of the Bible in the ${edition.name} (${edition.abbreviation}), from Genesis to Revelation.`;
+    const structuredData = {
+        '@context': 'https://schema.org',
+        '@graph': [
+            {
+                '@type': 'CollectionPage',
+                '@id': `${canonicalUrl}#library`,
+                url: canonicalUrl,
+                name: title,
+                description,
+                inLanguage: edition.language,
+                mainEntity: { '@id': `${canonicalUrl}#books` },
+            },
+            {
+                '@type': 'ItemList',
+                '@id': `${canonicalUrl}#books`,
+                name: 'Books of the Bible',
+                numberOfItems: books.length,
+                itemListElement: books.map((book, index) => ({
+                    '@type': 'ListItem',
+                    position: index + 1,
+                    name: book.name,
+                    url: `${canonicalUrl}/${book.code}`,
+                })),
+            },
+        ],
+    };
 
     useLayoutEffect(() => {
         if (
@@ -261,7 +292,47 @@ export default function Books({ books }: BooksProps) {
 
     return (
         <>
-            <Head title="Books" />
+            <Head title={title}>
+                <meta head-key="robots" name="robots" content="index,follow" />
+                <meta
+                    head-key="description"
+                    name="description"
+                    content={description}
+                />
+                <link
+                    head-key="canonical"
+                    rel="canonical"
+                    href={canonicalUrl}
+                />
+                <meta head-key="og:type" property="og:type" content="website" />
+                <meta
+                    head-key="og:site_name"
+                    property="og:site_name"
+                    content="Open Bible"
+                />
+                <meta head-key="og:title" property="og:title" content={title} />
+                <meta
+                    head-key="og:description"
+                    property="og:description"
+                    content={description}
+                />
+                <meta
+                    head-key="og:url"
+                    property="og:url"
+                    content={canonicalUrl}
+                />
+                <meta
+                    head-key="twitter:card"
+                    name="twitter:card"
+                    content="summary"
+                />
+                <script
+                    type="application/ld+json"
+                    dangerouslySetInnerHTML={{
+                        __html: serialiseStructuredData(structuredData),
+                    }}
+                />
+            </Head>
             <SavedItemsPageShell active="read">
                 <main className="min-h-[calc(100svh-5rem)] overflow-hidden bg-[#f4efe5] py-12 text-[#25221e] lg:min-h-svh lg:py-14">
                     <header className="px-6 sm:px-10 lg:px-14">

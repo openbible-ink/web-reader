@@ -28,6 +28,12 @@ class BookIndexController extends Controller
             ?? BibleEdition::query()->where('slug', 'oeb')->firstOrFail();
 
         return Inertia::render('books', [
+            'canonicalUrl' => route('books.index'),
+            'edition' => [
+                'name' => $edition->name,
+                'abbreviation' => $edition->abbreviation,
+                'language' => $edition->language,
+            ],
             'books' => $edition->books()
                 ->orderBy('canon_position')
                 ->get()
