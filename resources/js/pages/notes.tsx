@@ -5,10 +5,17 @@ import {
     Pencil,
     Plus,
     Save,
+    Search,
     Trash2,
     X,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+    type FormEvent,
+    useCallback,
+    useEffect,
+    useMemo,
+    useState,
+} from 'react';
 import CustomSelect from '@/components/custom-select';
 import NoteEditor from '@/components/note-editor';
 import NoteTagsInput from '@/components/note-tags-input';
@@ -489,13 +496,43 @@ function CreateNoteDrawer({
     );
 }
 
-function excerpt(markdown: string): string {
-    return markdown
+function excerpt(markdown: string, query = ''): string {
+    const plainText = markdown
         .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
         .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
         .replace(/[#>*_`[\]()!-]/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
+
+    if (!query) return plainText;
+    const matchIndex = plainText
+        .toLocaleLowerCase()
+        .indexOf(query.toLocaleLowerCase());
+    if (matchIndex < 0) return plainText;
+
+    const start = Math.max(0, matchIndex - 80);
+    const end = Math.min(plainText.length, matchIndex + query.length + 180);
+
+    return `${start > 0 ? '…' : ''}${plainText.slice(start, end)}${end < plainText.length ? '…' : ''}`;
+}
+
+function HighlightedText({ text, query }: { text: string; query: string }) {
+    if (!query) return text;
+    const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const expression = new RegExp(`(${escaped})`, 'gi');
+
+    return text.split(expression).map((part, index) =>
+        part.toLocaleLowerCase() === query.toLocaleLowerCase() ? (
+            <mark
+                key={`${part}-${index}`}
+                className="rounded-sm bg-[#eacb91]/55 px-0.5 text-inherit"
+            >
+                {part}
+            </mark>
+        ) : (
+            <span key={`${part}-${index}`}>{part}</span>
+        ),
+    );
 }
 
 export default function Notes({
@@ -503,16 +540,55 @@ export default function Notes({
     books,
     tags,
     activeTag,
+    query,
 }: {
     notes: NoteItem[];
     books: NoteBook[];
     tags: NoteTag[];
     activeTag: string;
+    query: string;
 }) {
     const [createOpen, setCreateOpen] = useState(false);
+    const [searchValue, setSearchValue] = useState(query);
+    useEffect(() => setSearchValue(query), [query]);
     const remove = (note: NoteItem) => {
         if (!window.confirm(`Delete “${note.title}”?`)) return;
         router.delete(`/notes/${note.id}`, { preserveScroll: true });
+    };
+    const notesUrl = (tag: string, search = query) => {
+        const params = new URLSearchParams();
+        if (search) params.set('q', search);
+        if (tag) params.set('tag', tag);
+        const queryString = params.toString();
+
+        return `/notes${queryString ? `?${queryString}` : ''}`;
+    };
+    const searchNotes = (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        router.get(
+            '/notes',
+            {
+                q: searchValue.trim() || undefined,
+                tag: activeTag || undefined,
+            },
+            {
+                preserveScroll: true,
+                preserveState: true,
+                replace: true,
+            },
+        );
+    };
+    const clearSearch = () => {
+        setSearchValue('');
+        router.get(
+            '/notes',
+            { tag: activeTag || undefined },
+            {
+                preserveScroll: true,
+                preserveState: true,
+                replace: true,
+            },
+        );
     };
 
     return (
@@ -530,7 +606,14 @@ export default function Notes({
                             </p>
                             <p className="mt-1.5 font-serif text-sm text-[#8a8277]">
                                 ({notes.length}{' '}
-                                {notes.length === 1 ? 'note' : 'notes'})
+                                {query
+                                    ? notes.length === 1
+                                        ? 'matching note'
+                                        : 'matching notes'
+                                    : notes.length === 1
+                                      ? 'note'
+                                      : 'notes'}
+                                )
                             </p>
                         </div>
                         <div className="flex flex-col items-end gap-3">
@@ -543,13 +626,53 @@ export default function Notes({
                             </button>
                         </div>
                     </div>
+                    <form
+                        role="search"
+                        aria-label="Search your notes"
+                        onSubmit={searchNotes}
+                        className="mt-7 flex items-center gap-2 rounded-2xl border border-[#d8cdbf] bg-[#fffaf3]/80 p-2 shadow-[0_10px_30px_rgba(66,49,31,0.05)] focus-within:border-[#b98b61] focus-within:ring-2 focus-within:ring-[#a95624]/12"
+                    >
+                        <Search
+                            aria-hidden="true"
+                            className="ms-3 size-5 shrink-0 text-[#806d5b]"
+                        />
+                        <label htmlFor="note-search" className="sr-only">
+                            Search note titles and contents
+                        </label>
+                        <input
+                            id="note-search"
+                            type="search"
+                            value={searchValue}
+                            onChange={(event) =>
+                                setSearchValue(event.target.value)
+                            }
+                            placeholder="Search note titles and contents…"
+                            className="h-11 min-w-0 flex-1 bg-transparent px-1 font-serif text-base text-[#27231f] outline-none placeholder:text-[#8f8579]"
+                        />
+                        {(searchValue || query) && (
+                            <button
+                                type="button"
+                                onClick={clearSearch}
+                                className="grid size-10 shrink-0 cursor-pointer place-items-center rounded-full text-[#796f64] transition hover:bg-[#eee4d7] hover:text-[#28231f] focus-visible:outline-2 focus-visible:outline-[#9a5428]"
+                                aria-label="Clear note search"
+                            >
+                                <X className="size-4" />
+                            </button>
+                        )}
+                        <button
+                            type="submit"
+                            className="inline-flex h-11 shrink-0 cursor-pointer items-center rounded-xl bg-[#a95624] px-5 font-serif text-sm font-semibold text-white transition hover:bg-[#8f471d] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7f3e19]"
+                        >
+                            Search
+                        </button>
+                    </form>
                     {tags.length > 0 && (
                         <nav
                             aria-label="Filter notes by tag"
-                            className="mt-7 flex flex-wrap gap-2"
+                            className="mt-4 flex flex-wrap gap-2"
                         >
                             <Link
-                                href="/notes"
+                                href={notesUrl('', query)}
                                 preserveScroll
                                 className={`rounded-full border px-4 py-2 font-serif text-sm transition ${!activeTag ? 'border-[#80502f] bg-[#80502f] text-white' : 'border-[#d8cdbf] bg-[#fffaf3] text-[#665d53] hover:border-[#b99473]'}`}
                             >
@@ -558,7 +681,7 @@ export default function Notes({
                             {tags.map((tag) => (
                                 <Link
                                     key={tag.id}
-                                    href={`/notes?tag=${encodeURIComponent(tag.slug)}`}
+                                    href={notesUrl(tag.slug, query)}
                                     preserveScroll
                                     className={`rounded-full border px-4 py-2 font-serif text-sm transition ${activeTag === tag.slug ? 'border-[#80502f] bg-[#80502f] text-white' : 'border-[#d8cdbf] bg-[#fffaf3] text-[#665d53] hover:border-[#b99473]'}`}
                                 >
@@ -572,7 +695,10 @@ export default function Notes({
                             {notes.map((note, index) => (
                                 <article
                                     key={note.id}
-                                    className="flex min-h-64 flex-col rounded-2xl border border-[#ded6ca] bg-[#fffdf8]/85 p-6 shadow-[0_12px_35px_rgba(69,52,31,0.05)]"
+                                    style={{
+                                        animationDelay: `${Math.min(index * 65, 650)}ms`,
+                                    }}
+                                    className="staggered-card-enter flex min-h-64 flex-col rounded-2xl border border-[#ded6ca] bg-[#fffdf8]/85 p-6 shadow-[0_12px_35px_rgba(69,52,31,0.05)]"
                                 >
                                     <Link
                                         href={note.noteUrl}
@@ -594,7 +720,10 @@ export default function Notes({
                                             </span>
                                         </div>
                                         <h2 className="mt-5 font-serif text-2xl font-semibold">
-                                            {note.title}
+                                            <HighlightedText
+                                                text={note.title}
+                                                query={query}
+                                            />
                                         </h2>
                                         {note.selectedText && (
                                             <p className="mt-3 line-clamp-2 border-l-2 border-[#c69a61] pl-3 font-serif text-sm text-[#786f63] italic">
@@ -602,7 +731,13 @@ export default function Notes({
                                             </p>
                                         )}
                                         <p className="mt-3 line-clamp-4 font-serif leading-7 text-[#554f47]">
-                                            {excerpt(note.bodyMarkdown)}
+                                            <HighlightedText
+                                                text={excerpt(
+                                                    note.bodyMarkdown,
+                                                    query,
+                                                )}
+                                                query={query}
+                                            />
                                         </p>
                                         {note.tags.length > 0 && (
                                             <div className="mt-4 flex flex-wrap gap-1.5">
@@ -674,20 +809,23 @@ export default function Notes({
                         <section className="mt-9 flex min-h-80 flex-col items-center justify-center rounded-2xl border border-dashed border-[#d4cabd] bg-[#faf6ef]/70 px-6 text-center">
                             <FileText className="size-10 stroke-[#927651] stroke-[1.25]" />
                             <h2 className="mt-4 font-serif text-2xl">
-                                No notes yet
+                                {query ? 'No matching notes' : 'No notes yet'}
                             </h2>
                             <p className="mt-2 max-w-md font-serif leading-7 text-[#7b7368]">
-                                Create a note here by choosing a passage, or add
-                                one while reading.
+                                {query
+                                    ? 'Try a different phrase or clear the search to see all your notes.'
+                                    : 'Create a note here by choosing a passage, or add one while reading.'}
                             </p>
-                            <button
-                                type="button"
-                                onClick={() => setCreateOpen(true)}
-                                className="mt-6 inline-flex cursor-pointer items-center gap-2 rounded-full bg-positive px-6 py-3 font-serif text-sm font-semibold text-positive-foreground hover:bg-positive-hover focus-visible:outline-2 focus-visible:outline-positive"
-                            >
-                                <Plus className="size-4" /> Create your first
-                                note
-                            </button>
+                            {!query && (
+                                <button
+                                    type="button"
+                                    onClick={() => setCreateOpen(true)}
+                                    className="mt-6 inline-flex cursor-pointer items-center gap-2 rounded-full bg-positive px-6 py-3 font-serif text-sm font-semibold text-positive-foreground hover:bg-positive-hover focus-visible:outline-2 focus-visible:outline-positive"
+                                >
+                                    <Plus className="size-4" /> Create your
+                                    first note
+                                </button>
+                            )}
                         </section>
                     )}
                 </main>

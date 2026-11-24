@@ -6,6 +6,7 @@ import {
     Bold,
     BookOpenText,
     Heading2,
+    Heading3,
     Italic,
     Link as LinkIcon,
     List,
@@ -48,6 +49,9 @@ export default function NoteEditor({
         undefined,
     );
     const [scriptureLinkOpen, setScriptureLinkOpen] = useState(false);
+    const [linkOpen, setLinkOpen] = useState(false);
+    const [linkUrl, setLinkUrl] = useState('https://');
+    const [editingLink, setEditingLink] = useState(false);
     const [linkBookCode, setLinkBookCode] = useState('');
     const [linkChapter, setLinkChapter] = useState('');
     const [linkVerseStart, setLinkVerseStart] = useState('');
@@ -105,20 +109,45 @@ export default function NoteEditor({
 
         const existingUrl = editor.getAttributes('link').href as
             string | undefined;
-        const url = window.prompt('Link URL', existingUrl ?? 'https://');
-        if (url === null) return;
-
-        if (!url.trim()) {
-            editor.chain().focus().extendMarkRange('link').unsetLink().run();
+        const editingExistingLink = editor.isActive('link');
+        if (editor.state.selection.empty && !editingExistingLink) {
+            toast.error('Select the words you want to turn into a link.');
             return;
         }
+
+        savedSelection.current = {
+            from: editor.state.selection.from,
+            to: editor.state.selection.to,
+        };
+        setEditingLink(editingExistingLink);
+        setLinkUrl(existingUrl ?? 'https://');
+        setLinkOpen(true);
+    };
+
+    const applyLink = () => {
+        if (!editor || !savedSelection.current || !linkUrl.trim()) return;
 
         editor
             .chain()
             .focus()
+            .setTextSelection(savedSelection.current)
             .extendMarkRange('link')
-            .setLink({ href: url.trim() })
+            .setLink({ href: linkUrl.trim() })
             .run();
+        setLinkOpen(false);
+    };
+
+    const removeLink = () => {
+        if (!editor || !savedSelection.current) return;
+
+        editor
+            .chain()
+            .focus()
+            .setTextSelection(savedSelection.current)
+            .extendMarkRange('link')
+            .unsetLink()
+            .run();
+        setLinkOpen(false);
     };
 
     const scriptureLinkBooks = useMemo(
@@ -184,13 +213,15 @@ export default function NoteEditor({
     }, [linkBookCode, linkBookEditionSlug, linkChapter, scriptureLinkOpen]);
 
     useEffect(() => {
-        if (!scriptureLinkOpen) return;
+        if (!scriptureLinkOpen && !linkOpen) return;
         const close = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') setScriptureLinkOpen(false);
+            if (event.key !== 'Escape') return;
+            setScriptureLinkOpen(false);
+            setLinkOpen(false);
         };
         window.addEventListener('keydown', close);
         return () => window.removeEventListener('keydown', close);
-    }, [scriptureLinkOpen]);
+    }, [linkOpen, scriptureLinkOpen]);
 
     const openScriptureLink = () => {
         if (!editor || editor.state.selection.empty) {
@@ -267,10 +298,16 @@ export default function NoteEditor({
             run: () => editor?.chain().focus().toggleBlockquote().run(),
         },
         {
-            label: 'Heading',
+            label: 'Heading 2',
             icon: Heading2,
             run: () =>
                 editor?.chain().focus().toggleHeading({ level: 2 }).run(),
+        },
+        {
+            label: 'Heading 3',
+            icon: Heading3,
+            run: () =>
+                editor?.chain().focus().toggleHeading({ level: 3 }).run(),
         },
         {
             label: 'Bullet list',
@@ -341,6 +378,83 @@ export default function NoteEditor({
                 editor={editor}
                 className={`note-rich-editor ${expanded ? '[&_.tiptap]:min-h-[calc(100vh-23rem)]' : ''}`}
             />
+            {linkOpen &&
+                typeof document !== 'undefined' &&
+                createPortal(
+                    <div
+                        className="fixed inset-0 z-[80] grid place-items-center bg-stone-950/25 p-4 backdrop-blur-[2px]"
+                        role="presentation"
+                        onMouseDown={(event) => {
+                            if (event.target === event.currentTarget)
+                                setLinkOpen(false);
+                        }}
+                    >
+                        <form
+                            role="dialog"
+                            aria-modal="true"
+                            aria-labelledby="note-link-title"
+                            className="w-full max-w-md rounded-3xl border border-stone-200 bg-[#fffdf9] p-6 shadow-[0_28px_80px_rgba(55,40,25,0.24)]"
+                            onSubmit={(event) => {
+                                event.preventDefault();
+                                applyLink();
+                            }}
+                        >
+                            <h2
+                                id="note-link-title"
+                                className="font-display text-2xl font-bold text-stone-950"
+                            >
+                                {editingLink ? 'Edit link' : 'Add link'}
+                            </h2>
+                            <p className="mt-1 text-sm text-stone-600">
+                                Enter the web address the selected text should
+                                open.
+                            </p>
+                            <label className="mt-5 block">
+                                <span className="mb-2 block text-xs font-semibold tracking-[0.16em] text-stone-600 uppercase">
+                                    Web address
+                                </span>
+                                <input
+                                    autoFocus
+                                    type="text"
+                                    inputMode="url"
+                                    value={linkUrl}
+                                    onChange={(event) =>
+                                        setLinkUrl(event.target.value)
+                                    }
+                                    className="h-12 w-full rounded-xl border border-stone-300 bg-white px-4 text-sm text-stone-950 outline-none transition focus:border-[#a45a2a] focus:ring-2 focus:ring-[#a45a2a]/15"
+                                    placeholder="https://example.com"
+                                    aria-label="Link web address"
+                                />
+                            </label>
+                            <div className="mt-6 flex items-center justify-end gap-3 border-t border-stone-200 pt-5">
+                                {editingLink && (
+                                    <button
+                                        type="button"
+                                        onClick={removeLink}
+                                        className="me-auto cursor-pointer rounded-full px-4 py-2.5 text-sm font-semibold text-[#9b3f29] hover:bg-[#f5e6df]"
+                                    >
+                                        Remove link
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => setLinkOpen(false)}
+                                    className="cursor-pointer rounded-full px-4 py-2.5 text-sm font-semibold text-stone-600 hover:bg-stone-100"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={!linkUrl.trim()}
+                                    className="cursor-pointer rounded-full bg-[#28704b] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#205d3e] disabled:cursor-not-allowed disabled:opacity-45"
+                                >
+                                    {editingLink ? 'Update link' : 'Add link'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>,
+                    document.body,
+                )}
             {scriptureLinkOpen &&
                 typeof document !== 'undefined' &&
                 createPortal(

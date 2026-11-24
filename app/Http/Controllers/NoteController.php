@@ -20,9 +20,17 @@ class NoteController extends Controller
     public function index(Request $request): Response
     {
         $activeTag = Str::slug($request->string('tag')->limit(48)->toString());
+        $search = Str::of($request->string('q')->toString())
+            ->squish()
+            ->limit(120)
+            ->toString();
         $notes = $request->user()->notes()
             ->with(['book.edition', 'segments', 'tags'])
             ->when($activeTag !== '', fn ($query) => $query->whereHas('tags', fn ($tags) => $tags->where('slug', $activeTag)))
+            ->when($search !== '', function ($query) use ($search): void {
+                $value = '%'.$this->escapeLike(Str::lower($search)).'%';
+                $query->whereRaw("lower(title || ' ' || body_markdown) like ? escape '\\'", [$value]);
+            })
             ->latest('updated_at')
             ->get()
             ->map(fn (Note $note) => $this->serialize($note));
@@ -63,6 +71,7 @@ class NoteController extends Controller
             'books' => $books,
             'tags' => $tags,
             'activeTag' => $activeTag,
+            'query' => $search,
         ]);
     }
 
@@ -257,6 +266,11 @@ class NoteController extends Controller
             ...collect($data)->except(['segments', 'tags'])->all(),
             'book_code' => $bookCode,
         ];
+    }
+
+    private function escapeLike(string $value): string
+    {
+        return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value);
     }
 
     /** @param array<int, array<string, mixed>> $segments */

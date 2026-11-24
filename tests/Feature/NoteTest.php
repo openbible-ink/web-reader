@@ -190,6 +190,26 @@ class NoteTest extends TestCase
                 ->where('notes.0.tags.0.name', 'Christology')
                 ->has('tags', 3),
         );
+
+        $this->actingAs($user)->get('/notes?q=question')->assertOk()->assertInertia(
+            fn (Assert $page) => $page
+                ->where('query', 'question')
+                ->has('notes', 1)
+                ->where('notes.0.title', 'Question about the Word'),
+        );
+
+        $this->actingAs($user)->get('/notes?q=TAGGED')->assertOk()->assertInertia(
+            fn (Assert $page) => $page
+                ->where('query', 'TAGGED')
+                ->has('notes', 2),
+        );
+
+        $this->actingAs($user)->get('/notes?q=question&tag=observation')->assertOk()->assertInertia(
+            fn (Assert $page) => $page
+                ->where('query', 'question')
+                ->where('activeTag', 'observation')
+                ->has('notes', 0),
+        );
     }
 
     public function test_section_notes_preserve_the_source_section_and_its_canonical_range(): void
