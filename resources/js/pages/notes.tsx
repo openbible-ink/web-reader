@@ -457,6 +457,12 @@ function CreateNoteDrawer({
                                 value={body}
                                 onChange={setBody}
                                 disabled={saving}
+                                scriptureBooks={books.map((item) => ({
+                                    code: item.code,
+                                    name: item.name,
+                                    chapterCount: item.chapterCount,
+                                    editionSlug: item.edition.slug,
+                                }))}
                             />
                         </div>
                         <NoteTagsInput
@@ -485,6 +491,8 @@ function CreateNoteDrawer({
 
 function excerpt(markdown: string): string {
     return markdown
+        .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+        .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
         .replace(/[#>*_`[\]()!-]/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
@@ -561,13 +569,19 @@ export default function Notes({
                     )}
                     {notes.length ? (
                         <div className="mt-9 grid gap-4 sm:grid-cols-2">
-                            {notes.map((note) => (
+                            {notes.map((note, index) => (
                                 <article
                                     key={note.id}
                                     className="flex min-h-64 flex-col rounded-2xl border border-[#ded6ca] bg-[#fffdf8]/85 p-6 shadow-[0_12px_35px_rgba(69,52,31,0.05)]"
                                 >
                                     <Link
                                         href={note.noteUrl}
+                                        prefetch={
+                                            index < 4
+                                                ? ['mount', 'hover', 'click']
+                                                : ['hover', 'click']
+                                        }
+                                        cacheFor="5m"
                                         className="flex-1 rounded focus-visible:outline-2 focus-visible:outline-[#a95624]"
                                     >
                                         <div className="flex items-center gap-3 text-[#89683b]">

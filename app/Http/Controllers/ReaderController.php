@@ -61,6 +61,16 @@ class ReaderController extends Controller
         }
         $focusedNoteExpanded = (bool) $focusedNoteId && $request->boolean('fullscreen');
 
+        $backUrl = null;
+        if ($user !== null && $request->filled('from_note')) {
+            $originNote = $user->notes()
+                ->whereKey($request->string('from_note')->limit(64)->toString())
+                ->first();
+            if ($originNote !== null) {
+                $backUrl = route('notes.show', $originNote, absolute: false);
+            }
+        }
+
         $focusedPassage = null;
         $requestedVerses = $request->string('verses')->limit(32)->toString();
         if ($requestedVerses !== '' && preg_match('/^(\d{1,3}[a-z]?)(?:-(\d{1,3}[a-z]?))?$/i', $requestedVerses, $verseMatch)) {
@@ -142,6 +152,7 @@ class ReaderController extends Controller
             ->map(fn (BibleBook $libraryBook) => [
                 'code' => $libraryBook->book_code,
                 'name' => $libraryBook->name,
+                'chapterCount' => $libraryBook->chapter_count,
                 'testament' => $libraryBook->canon_position !== null && $libraryBook->canon_position <= 39 ? 'old' : 'new',
                 'readerUrl' => route('reader.show', [
                     'book' => $libraryBook->book_code,
@@ -176,6 +187,7 @@ class ReaderController extends Controller
                 'book' => $book->book_code,
                 'chapter' => $chapter,
             ]),
+            'backUrl' => $backUrl,
             'focusedSectionKey' => $request->filled('section')
                 ? $request->string('section')->limit(255)->toString()
                 : null,

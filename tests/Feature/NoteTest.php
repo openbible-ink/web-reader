@@ -17,6 +17,7 @@ class NoteTest extends TestCase
     public function test_note_routes_require_authentication(): void
     {
         $this->get('/notes')->assertRedirect('/login');
+        $this->get('/notes/example/export')->assertRedirect('/login');
         $this->post('/notes')->assertRedirect('/login');
     }
 
@@ -33,6 +34,7 @@ class NoteTest extends TestCase
             'selected_text' => 'In the beginning was the Word',
             'verse_start' => '1',
             'verse_end' => '1',
+            'tags' => ['Genesis'],
             'segments' => [[
                 'verse' => '1',
                 'start_offset' => 0,
@@ -53,11 +55,20 @@ class NoteTest extends TestCase
                 ->where('note.title', 'The Word and creation')
                 ->where('note.reference', 'John 1:1')
                 ->where('note.bodyMarkdown', $payload['body_markdown'])
+                ->where('note.tags.0.name', 'Genesis')
                 ->where('edition.abbreviation', 'OEB')
                 ->where('book.code', 'JHN')
                 ->where('readerUrl', '/read/JHN/1')
-                ->where('editUrl', "/read/JHN/1?note={$note->id}&fullscreen=1"),
+                ->where('editUrl', "/read/JHN/1?note={$note->id}&fullscreen=1")
+                ->where('exportUrl', "/notes/{$note->id}/export"),
         );
+
+        $export = $this->actingAs($user)->get("/notes/{$note->id}/export");
+        $export->assertOk()->assertDownload('the-word-and-creation.md');
+        $this->assertStringContainsString('# The Word and creation', $export->streamedContent());
+        $this->assertStringContainsString('> John 1:1 · Open English Bible (OEB)', $export->streamedContent());
+        $this->assertStringContainsString('**Tags:** Genesis', $export->streamedContent());
+        $this->assertStringContainsString('The opening echoes **Genesis**.', $export->streamedContent());
 
         $this->actingAs($user)->get('/notes')->assertOk()->assertInertia(
             fn (Assert $page) => $page
@@ -85,7 +96,10 @@ class NoteTest extends TestCase
         );
 
         $payload['title'] = 'Creation and the Word';
-        $this->actingAs($user)->patch("/notes/{$note->id}", $payload)->assertSessionHasNoErrors();
+        $this->actingAs($user)
+            ->patch("/notes/{$note->id}", $payload)
+            ->assertRedirect("/notes/{$note->id}")
+            ->assertSessionHasNoErrors();
         $this->assertDatabaseHas('notes', ['id' => $note->id, 'title' => 'Creation and the Word']);
 
         $this->actingAs($user)->delete("/notes/{$note->id}")->assertSessionHasNoErrors();
@@ -108,6 +122,7 @@ class NoteTest extends TestCase
 
         $this->actingAs(User::factory()->create())->delete("/notes/{$note->id}")->assertNotFound();
         $this->actingAs(User::factory()->create())->get("/notes/{$note->id}")->assertNotFound();
+        $this->actingAs(User::factory()->create())->get("/notes/{$note->id}/export")->assertNotFound();
     }
 
     public function test_user_can_create_a_verse_range_note(): void

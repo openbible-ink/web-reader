@@ -101,6 +101,7 @@ export interface TypographyPreferences {
 
 export interface ReaderProps {
     canonicalUrl: string;
+    backUrl?: string | null;
     edition: {
         slug: string;
         name: string;
@@ -153,6 +154,7 @@ export interface ReaderProps {
     libraryBooks: Array<{
         code: string;
         name: string;
+        chapterCount: number;
         testament: 'old' | 'new';
         readerUrl: string;
     }>;

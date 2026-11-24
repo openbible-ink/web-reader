@@ -1,11 +1,19 @@
 import { Head, Link } from '@inertiajs/react';
-import { ArrowLeft, BookOpen, Pencil, X } from 'lucide-react';
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, BookOpen, Download, Pencil, X } from 'lucide-react';
+import {
+    type ReactNode,
+    useCallback,
+    useEffect,
+    useMemo,
+    useState,
+} from 'react';
 import NoteContent from '@/components/note-content';
+import SavedItemsPageShell from '@/components/saved-items-page-shell';
 import {
     cachedScriptureSource,
     loadScriptureSource,
 } from '@/lib/scripture-source-cache';
+import { loadScriptureChapter } from '@/lib/scripture-chapter-cache';
 import type { BibleDocument, FlowNode, InlineNode } from 'usfm-parser';
 import { parseUsfm } from 'usfm-parser';
 import { parseOeb, type OebVariantOptions } from 'usfm-parser/oeb';
@@ -25,6 +33,7 @@ interface NotePageProps {
         reference: string;
         attachmentLabel: string;
         updatedAt?: string | null;
+        tags: Array<{ id: string; name: string; slug: string }>;
     };
     edition: {
         slug: string;
@@ -34,8 +43,17 @@ interface NotePageProps {
         variantProfile?: string | null;
     };
     book: { code: string; name: string; sourceUrl: string };
+    scriptureBooks: Array<{ code: string; name: string }>;
     readerUrl: string;
     editUrl: string;
+    exportUrl: string;
+}
+
+interface LinkedPassage {
+    bookCode: string;
+    chapter: string;
+    verseStart: string;
+    verseEnd: string;
 }
 
 interface PassageVerse {
@@ -122,7 +140,15 @@ function passageVerses(
                     };
                     return;
                 }
-                if (current) current.text += inlineText(node);
+                if (current) {
+                    const text = inlineText(node);
+                    const needsSpace =
+                        current.text !== '' &&
+                        text !== '' &&
+                        !/\s$/.test(current.text) &&
+                        !/^[\s,.;:!?)]/.test(text);
+                    current.text += `${needsSpace ? ' ' : ''}${text}`;
+                }
             };
 
             chapterContent(document, currentChapter).forEach((node) => {
@@ -169,14 +195,27 @@ export default function NoteShow({
     note,
     edition,
     book,
+    scriptureBooks,
     readerUrl,
     editUrl,
+    exportUrl,
 }: NotePageProps) {
     const [passageOpen, setPassageOpen] = useState(false);
     const [source, setSource] = useState(() =>
         cachedScriptureSource(book.sourceUrl),
     );
     const [sourceError, setSourceError] = useState(false);
+    const [linkedPassage, setLinkedPassage] = useState<LinkedPassage>();
+    const [linkedPassageClosing, setLinkedPassageClosing] = useState(false);
+    const [linkedDocument, setLinkedDocument] = useState<BibleDocument>();
+    const [linkedPassageError, setLinkedPassageError] = useState(false);
+    const closeLinkedPassage = useCallback(() => {
+        setLinkedPassageClosing(true);
+        window.setTimeout(() => {
+            setLinkedPassage(undefined);
+            setLinkedPassageClosing(false);
+        }, 300);
+    }, []);
 
     useEffect(() => {
         if (source || note.selectedText) return;
@@ -186,13 +225,35 @@ export default function NoteShow({
     }, [book.sourceUrl, note.selectedText, source]);
 
     useEffect(() => {
-        if (!passageOpen) return;
+        if (!passageOpen && !linkedPassage) return;
         const dismiss = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') setPassageOpen(false);
+            if (event.key === 'Escape') {
+                setPassageOpen(false);
+                if (linkedPassage) closeLinkedPassage();
+            }
         };
         window.document.addEventListener('keydown', dismiss);
         return () => window.document.removeEventListener('keydown', dismiss);
-    }, [passageOpen]);
+    }, [closeLinkedPassage, linkedPassage, passageOpen]);
+
+    useEffect(() => {
+        if (!linkedPassage) return;
+        let active = true;
+        setLinkedDocument(undefined);
+        setLinkedPassageError(false);
+        loadScriptureChapter(
+            `/api/v1/editions/${edition.slug}/books/${linkedPassage.bookCode}/chapters/${linkedPassage.chapter}`,
+        )
+            .then(({ document }) => {
+                if (active) setLinkedDocument(document);
+            })
+            .catch(() => {
+                if (active) setLinkedPassageError(true);
+            });
+        return () => {
+            active = false;
+        };
+    }, [edition.slug, linkedPassage]);
 
     const verses = useMemo(() => {
         if (!source || note.selectedText) return [];
@@ -226,160 +287,297 @@ export default function NoteShow({
               year: 'numeric',
           })
         : undefined;
+    const linkedBook = linkedPassage
+        ? scriptureBooks.find(
+              (scriptureBook) => scriptureBook.code === linkedPassage.bookCode,
+          )
+        : undefined;
+    const linkedVerses = useMemo(
+        () =>
+            linkedPassage && linkedDocument
+                ? passageVerses(
+                      linkedDocument,
+                      linkedPassage.chapter,
+                      linkedPassage.chapter,
+                      linkedPassage.verseStart,
+                      linkedPassage.verseEnd,
+                  )
+                : [],
+        [linkedDocument, linkedPassage],
+    );
+    const linkedPassageLabel = linkedPassage
+        ? `${linkedBook?.name ?? linkedPassage.bookCode} ${linkedPassage.chapter}:${linkedPassage.verseStart}${linkedPassage.verseEnd !== linkedPassage.verseStart ? `–${linkedPassage.verseEnd}` : ''}`
+        : '';
+    const openScriptureLink = (href: string) => {
+        const url = new URL(href, window.location.origin);
+        const path = url.pathname.match(/^\/read\/([A-Za-z0-9]{3})\/(\d+)$/);
+        const range = url.searchParams
+            .get('verses')
+            ?.match(/^(\d{1,3}[a-z]?)(?:-(\d{1,3}[a-z]?))?$/i);
+        if (!path || !range) return;
+        setLinkedPassageClosing(false);
+        setLinkedPassage({
+            bookCode: path[1].toUpperCase(),
+            chapter: path[2],
+            verseStart: range[1],
+            verseEnd: range[2] ?? range[1],
+        });
+    };
 
     return (
         <>
             <Head title={note.title} />
-            <div className="relative min-h-svh overflow-hidden bg-[#f4efe6] text-[#201f1b]">
-                <div
-                    aria-hidden="true"
-                    className="pointer-events-none absolute inset-x-0 top-0 h-[27rem] bg-[linear-gradient(180deg,rgba(255,252,246,0.08),#f4efe6_95%),url('/images/scripture/john-olive-branch.png')] bg-cover bg-[center_34%] opacity-35"
-                />
-                <header className="relative z-10 border-b border-[#dcd2c4]/80 bg-[#fbf8f1]/82 backdrop-blur-md">
-                    <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 sm:px-8">
-                        <Link
-                            href="/dashboard"
-                            className="flex items-center gap-3 rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#9a5428]"
-                        >
-                            <img
-                                src="/images/brand/open-bible-mark-dark-128.png"
-                                alt=""
-                                className="size-9 object-contain"
-                            />
-                            <span className="font-serif text-lg font-semibold">
-                                Open Bible
-                            </span>
-                        </Link>
-                        <Link
-                            href={editUrl}
-                            className="inline-flex items-center gap-2 rounded-full border border-[#d4c8b8] bg-[#fffaf2]/75 px-4 py-2 font-serif text-sm transition hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9a5428]"
-                        >
-                            <Pencil className="size-4" /> Edit note
-                        </Link>
-                    </div>
-                </header>
-
-                <main className="relative z-10 mx-auto max-w-4xl px-5 pt-8 pb-20 sm:px-8 sm:pt-12 lg:pt-16">
-                    <Link
-                        href="/notes"
-                        className="inline-flex items-center gap-2 rounded-full font-serif text-sm text-[#6f675d] hover:text-[#211f1b] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#9a5428]"
-                    >
-                        <ArrowLeft className="size-4" /> All notes
-                    </Link>
-
-                    <article className="mt-8 rounded-[2rem] border border-[#ded4c7] bg-[#fffdf8]/94 px-6 py-10 shadow-[0_28px_90px_rgba(65,47,29,0.12)] sm:px-12 sm:py-14 lg:px-20 lg:py-16">
-                        <header className="relative border-b border-[#e4dbcf] pb-10 text-center sm:pb-12">
-                            <p className="font-sans text-[0.64rem] font-semibold tracking-[0.26em] text-[#8f6e42] uppercase">
-                                Personal note · {edition.abbreviation}
-                            </p>
-                            <h1 className="mx-auto mt-5 max-w-3xl font-serif text-4xl leading-[1.04] font-black tracking-[-0.035em] text-[#171815] sm:text-6xl">
-                                {note.title}
-                            </h1>
-                            <div className="relative mt-6 inline-block">
-                                <button
-                                    type="button"
-                                    onClick={() =>
-                                        setPassageOpen((open) => !open)
-                                    }
-                                    className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbcbb7] bg-[#f7efe3] px-4 py-2 font-serif text-sm text-[#70522f] transition hover:border-[#c5a57c] hover:bg-[#f2e5d3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9a5428]"
-                                    aria-expanded={passageOpen}
-                                    aria-controls="attached-passage"
+            <SavedItemsPageShell active="notes">
+                <div className="relative min-h-svh overflow-hidden bg-[#f4efe6] text-[#201f1b]">
+                    <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-x-0 top-0 h-[27rem] bg-[linear-gradient(180deg,rgba(255,252,246,0.08),#f4efe6_95%),url('/images/scripture/john-olive-branch.png')] bg-cover bg-[center_34%] opacity-35"
+                    />
+                    <header className="relative z-10 border-b border-[#dcd2c4]/80 bg-[#fbf8f1]/82 backdrop-blur-md">
+                        <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 sm:px-8">
+                            <Link
+                                href="/notes"
+                                className="inline-flex items-center gap-2 rounded-full font-serif text-sm text-[#6f675d] hover:text-[#211f1b] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#9a5428]"
+                            >
+                                <ArrowLeft className="size-4" /> All notes
+                            </Link>
+                            <div className="flex items-center gap-2 sm:gap-3">
+                                <a
+                                    href={exportUrl}
+                                    download
+                                    className="inline-flex items-center gap-2 rounded-full border border-[#cfc1af] bg-[#fffaf2]/80 px-4 py-2 font-serif text-sm text-[#5f554a] transition hover:border-[#bba78f] hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9a5428]"
                                 >
-                                    <BookOpen className="size-4" />
-                                    {note.attachmentLabel}
-                                </button>
+                                    <Download className="size-4" />
+                                    <span className="hidden sm:inline">
+                                        Export note
+                                    </span>
+                                    <span className="sm:hidden">Export</span>
+                                </a>
+                                <Link
+                                    href={editUrl}
+                                    className="inline-flex items-center gap-2 rounded-full bg-[#a95624] px-4 py-2 font-serif text-sm font-semibold text-white shadow-[0_7px_18px_rgba(133,70,31,0.2)] transition hover:bg-[#8f471d] hover:shadow-[0_9px_22px_rgba(133,70,31,0.28)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7f3e19]"
+                                >
+                                    <Pencil className="size-4" /> Edit note
+                                </Link>
+                            </div>
+                        </div>
+                    </header>
 
-                                {passageOpen && (
-                                    <div
-                                        id="attached-passage"
-                                        role="dialog"
-                                        aria-label={`Attached passage: ${note.attachmentLabel}`}
-                                        className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100svh-2rem)] w-[min(38rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-[#d8cab8] bg-[#fffaf2] text-left shadow-[0_22px_65px_rgba(48,36,24,0.2)]"
+                    <main className="relative z-10 mx-auto max-w-4xl px-5 pt-8 pb-20 sm:px-8 sm:pt-12 lg:pt-16">
+                        <article className="rounded-[2rem] border border-[#ded4c7] bg-[#fffdf8]/94 px-6 py-10 shadow-[0_28px_90px_rgba(65,47,29,0.12)] sm:px-12 sm:py-14 lg:px-20 lg:py-16">
+                            <header className="relative border-b border-[#e4dbcf] pb-10 text-center sm:pb-12">
+                                <p className="font-sans text-[0.64rem] font-semibold tracking-[0.26em] text-[#8f6e42] uppercase">
+                                    Personal note · {edition.abbreviation}
+                                </p>
+                                <h1 className="mx-auto mt-5 max-w-3xl font-serif text-4xl leading-[1.04] font-black tracking-[-0.035em] text-[#171815] sm:text-6xl">
+                                    {note.title}
+                                </h1>
+                                <div className="relative mt-6 inline-block">
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setPassageOpen((open) => !open)
+                                        }
+                                        className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbcbb7] bg-[#f7efe3] px-4 py-2 font-serif text-sm text-[#70522f] transition hover:border-[#c5a57c] hover:bg-[#f2e5d3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9a5428]"
+                                        aria-expanded={passageOpen}
+                                        aria-controls="attached-passage"
                                     >
-                                        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-[#e4d8c9] px-5 py-4">
-                                            <div>
-                                                <p className="font-sans text-[0.61rem] font-semibold tracking-[0.2em] text-[#9a5428] uppercase">
-                                                    Attached passage
-                                                </p>
-                                                <h2 className="mt-1 font-serif text-xl font-semibold">
-                                                    {note.attachmentLabel}
-                                                </h2>
-                                                {note.sectionTitle && (
-                                                    <p className="mt-0.5 font-sans text-xs text-[#7c746a]">
-                                                        {note.reference}
+                                        <BookOpen className="size-4" />
+                                        {note.attachmentLabel}
+                                    </button>
+
+                                    {passageOpen && (
+                                        <div
+                                            id="attached-passage"
+                                            role="dialog"
+                                            aria-label={`Attached passage: ${note.attachmentLabel}`}
+                                            className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100svh-2rem)] w-[min(38rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-[#d8cab8] bg-[#fffaf2] text-left shadow-[0_22px_65px_rgba(48,36,24,0.2)]"
+                                        >
+                                            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-[#e4d8c9] px-5 py-4">
+                                                <div>
+                                                    <p className="font-sans text-[0.61rem] font-semibold tracking-[0.2em] text-[#9a5428] uppercase">
+                                                        Attached passage
+                                                    </p>
+                                                    <h2 className="mt-1 font-serif text-xl font-semibold">
+                                                        {note.attachmentLabel}
+                                                    </h2>
+                                                    {note.sectionTitle && (
+                                                        <p className="mt-0.5 font-sans text-xs text-[#7c746a]">
+                                                            {note.reference}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setPassageOpen(false)
+                                                    }
+                                                    className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-[#9a5428]"
+                                                    aria-label="Close passage"
+                                                >
+                                                    <X className="size-4" />
+                                                </button>
+                                            </div>
+                                            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 font-serif text-base leading-7 text-[#484139]">
+                                                {note.selectedText ? (
+                                                    <blockquote className="border-l-2 border-[#b66b36] pl-4 italic">
+                                                        “{note.selectedText}”
+                                                    </blockquote>
+                                                ) : verses.length ? (
+                                                    <div className="grid gap-3">
+                                                        {passageContent(
+                                                            verses,
+                                                            Boolean(
+                                                                note.chapterEnd &&
+                                                                note.chapterEnd !==
+                                                                    note.chapter,
+                                                            ),
+                                                        )}
+                                                    </div>
+                                                ) : sourceError ? (
+                                                    <p className="text-[#81776c] italic">
+                                                        The passage could not be
+                                                        loaded just now.
+                                                    </p>
+                                                ) : (
+                                                    <p className="text-[#81776c] italic">
+                                                        Preparing the passage…
                                                     </p>
                                                 )}
                                             </div>
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    setPassageOpen(false)
-                                                }
-                                                className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-[#9a5428]"
-                                                aria-label="Close passage"
-                                            >
-                                                <X className="size-4" />
-                                            </button>
+                                            <div className="shrink-0 border-t border-[#e4d8c9] px-5 py-4">
+                                                <Link
+                                                    href={readerUrl}
+                                                    className="inline-flex items-center gap-2 font-serif text-sm font-semibold text-[#75512b] hover:text-[#3f2b17]"
+                                                >
+                                                    Read in context
+                                                    <span aria-hidden="true">
+                                                        →
+                                                    </span>
+                                                </Link>
+                                            </div>
                                         </div>
-                                        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 font-serif text-base leading-7 text-[#484139]">
-                                            {note.selectedText ? (
-                                                <blockquote className="border-l-2 border-[#b66b36] pl-4 italic">
-                                                    “{note.selectedText}”
-                                                </blockquote>
-                                            ) : verses.length ? (
-                                                <div className="grid gap-3">
-                                                    {passageContent(
-                                                        verses,
-                                                        Boolean(
-                                                            note.chapterEnd &&
-                                                            note.chapterEnd !==
-                                                                note.chapter,
-                                                        ),
-                                                    )}
-                                                </div>
-                                            ) : sourceError ? (
-                                                <p className="text-[#81776c] italic">
-                                                    The passage could not be
-                                                    loaded just now.
-                                                </p>
-                                            ) : (
-                                                <p className="text-[#81776c] italic">
-                                                    Preparing the passage…
-                                                </p>
+                                    )}
+                                </div>
+                                {note.tags.length > 0 && (
+                                    <ul
+                                        aria-label="Note tags"
+                                        className="mt-5 flex flex-wrap justify-center gap-2"
+                                    >
+                                        {note.tags.map((tag) => (
+                                            <li
+                                                key={tag.id}
+                                                className="rounded-full border border-[#dfd2c1] bg-[#f3eadc] px-3 py-1 font-sans text-xs font-medium text-[#684c30]"
+                                            >
+                                                {tag.name}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </header>
+
+                            <div className="mx-auto mt-10 max-w-[42rem] sm:mt-14">
+                                <NoteContent
+                                    markdown={note.bodyMarkdown}
+                                    onScriptureLink={openScriptureLink}
+                                />
+                            </div>
+
+                            <footer className="mx-auto mt-14 flex max-w-[42rem] items-center justify-between gap-4 border-t border-[#e4dbcf] pt-6 font-serif text-sm text-[#81786c]">
+                                <span>
+                                    {updated ? `Updated ${updated}` : ''}
+                                </span>
+                                <Link
+                                    href={readerUrl}
+                                    className="inline-flex items-center gap-2 text-[#70522f] hover:text-[#372717]"
+                                >
+                                    <BookOpen className="size-4" /> Read passage
+                                </Link>
+                            </footer>
+                        </article>
+                    </main>
+                    {linkedPassage && (
+                        <div
+                            className={`fixed inset-0 z-[70] bg-stone-950/25 backdrop-blur-[2px] transition-[opacity,backdrop-filter] duration-300 motion-reduce:transition-none ${linkedPassageClosing ? 'opacity-0 backdrop-blur-none' : 'animate-in fade-in opacity-100'}`}
+                        >
+                            <button
+                                type="button"
+                                className="absolute inset-0 cursor-default"
+                                aria-label="Close linked passage"
+                                onClick={closeLinkedPassage}
+                            />
+                            <aside
+                                role="dialog"
+                                aria-modal="true"
+                                aria-labelledby="linked-passage-title"
+                                className={`absolute inset-y-0 right-0 flex w-[min(46rem,94vw)] flex-col border-l border-[#d8cab8] bg-[#fffaf2] shadow-[-24px_0_70px_rgba(48,36,24,0.2)] transition-transform duration-300 ease-out motion-reduce:transition-none ${linkedPassageClosing ? 'translate-x-full' : 'animate-in slide-in-from-right translate-x-0'}`}
+                            >
+                                <header className="flex shrink-0 items-start justify-between gap-6 border-b border-[#e4d8c9] px-6 py-6 sm:px-9">
+                                    <div>
+                                        <p className="font-sans text-[0.64rem] font-semibold tracking-[0.22em] text-[#9a5428] uppercase">
+                                            Scripture reference ·{' '}
+                                            {edition.abbreviation}
+                                        </p>
+                                        <h2
+                                            id="linked-passage-title"
+                                            className="mt-2 font-serif text-3xl font-black text-[#201f1b]"
+                                        >
+                                            {linkedPassageLabel}
+                                        </h2>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={closeLinkedPassage}
+                                        className="grid size-10 shrink-0 cursor-pointer place-items-center rounded-full border border-[#ddd0bf] hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-[#9a5428]"
+                                        aria-label="Close linked passage"
+                                    >
+                                        <X className="size-5" />
+                                    </button>
+                                </header>
+                                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-8 sm:px-9 sm:py-10">
+                                    {linkedVerses.length ? (
+                                        <div className="grid gap-5 font-serif text-xl leading-9 text-[#332f2a]">
+                                            {passageContent(
+                                                linkedVerses,
+                                                false,
                                             )}
                                         </div>
-                                        <div className="shrink-0 border-t border-[#e4d8c9] px-5 py-4">
-                                            <Link
-                                                href={readerUrl}
-                                                className="inline-flex items-center gap-2 font-serif text-sm font-semibold text-[#75512b] hover:text-[#3f2b17]"
-                                            >
-                                                Read in context
-                                                <span aria-hidden="true">
-                                                    →
-                                                </span>
-                                            </Link>
+                                    ) : linkedPassageError ? (
+                                        <p className="font-serif text-[#81776c] italic">
+                                            The passage could not be loaded just
+                                            now.
+                                        </p>
+                                    ) : (
+                                        <div
+                                            className="grid gap-5"
+                                            aria-label="Preparing passage"
+                                        >
+                                            {[72, 91, 83, 65].map((width) => (
+                                                <div
+                                                    key={width}
+                                                    className="h-5 animate-pulse rounded-full bg-[#e7ded1]"
+                                                    style={{
+                                                        width: `${width}%`,
+                                                    }}
+                                                />
+                                            ))}
                                         </div>
-                                    </div>
-                                )}
-                            </div>
-                        </header>
-
-                        <div className="mx-auto mt-10 max-w-[42rem] sm:mt-14">
-                            <NoteContent markdown={note.bodyMarkdown} />
+                                    )}
+                                </div>
+                                <footer className="shrink-0 border-t border-[#e4d8c9] bg-[#faf4ea] px-6 py-5 sm:px-9">
+                                    <Link
+                                        href={`/read/${linkedPassage.bookCode}/${linkedPassage.chapter}?from_note=${note.id}#verse-${linkedPassage.verseStart}`}
+                                        className="inline-flex w-full items-center justify-center gap-3 rounded-xl bg-[#a95624] px-5 py-3.5 font-serif text-base font-semibold text-white shadow-[0_8px_22px_rgba(133,70,31,0.2)] transition hover:bg-[#8f471d] hover:shadow-[0_10px_26px_rgba(133,70,31,0.28)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7f3e19] sm:w-auto"
+                                    >
+                                        Open in the full reader
+                                        <span aria-hidden="true">→</span>
+                                    </Link>
+                                </footer>
+                            </aside>
                         </div>
-
-                        <footer className="mx-auto mt-14 flex max-w-[42rem] items-center justify-between gap-4 border-t border-[#e4dbcf] pt-6 font-serif text-sm text-[#81786c]">
-                            <span>{updated ? `Updated ${updated}` : ''}</span>
-                            <Link
-                                href={readerUrl}
-                                className="inline-flex items-center gap-2 text-[#70522f] hover:text-[#372717]"
-                            >
-                                <BookOpen className="size-4" /> Read passage
-                            </Link>
-                        </footer>
-                    </article>
-                </main>
-            </div>
+                    )}
+                </div>
+            </SavedItemsPageShell>
         </>
     );
 }

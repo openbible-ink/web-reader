@@ -13,6 +13,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class NoteController extends Controller
 {
@@ -102,6 +103,15 @@ class NoteController extends Controller
                 'name' => $book->name,
                 'sourceUrl' => asset($book->source_path),
             ],
+            'scriptureBooks' => BibleBook::query()
+                ->where('edition_id', $book->edition_id)
+                ->orderBy('canon_position')
+                ->get()
+                ->map(fn (BibleBook $scriptureBook) => [
+                    'code' => $scriptureBook->book_code,
+                    'name' => $scriptureBook->name,
+                ])
+                ->values(),
             'readerUrl' => route('reader.show', [
                 'book' => $book->book_code,
                 'chapter' => $note->chapter,
@@ -112,7 +122,45 @@ class NoteController extends Controller
                 'note' => $note->id,
                 'fullscreen' => 1,
             ], absolute: false),
+            'exportUrl' => route('notes.export', $note, absolute: false),
         ]);
+    }
+
+    public function export(Request $request, Note $note): StreamedResponse
+    {
+        $this->authorizeOwner($request, $note);
+        $note->load(['book.edition', 'tags']);
+
+        /** @var BibleBook $book */
+        $book = $note->book;
+        $reference = $this->reference($book->name, $note);
+        $edition = $book->edition;
+        $tags = $note->tags->pluck('name')->all();
+        $lines = [
+            '# '.$note->title,
+            '',
+            '> '.$reference.' · '.$edition->name.' ('.$edition->abbreviation.')',
+        ];
+
+        if ($tags !== []) {
+            $lines[] = '';
+            $lines[] = '**Tags:** '.implode(', ', $tags);
+        }
+
+        $lines[] = '';
+        $lines[] = '---';
+        $lines[] = '';
+        $lines[] = trim($note->body_markdown);
+        $markdown = implode("\n", $lines)."\n";
+        $filename = (Str::slug($note->title) ?: 'open-bible-note').'.md';
+
+        return response()->streamDownload(
+            static function () use ($markdown): void {
+                echo $markdown;
+            },
+            $filename,
+            ['Content-Type' => 'text/markdown; charset=UTF-8'],
+        );
     }
 
     public function store(Request $request): RedirectResponse
@@ -139,7 +187,7 @@ class NoteController extends Controller
             $this->syncTags($request, $note, $data['tags'] ?? []);
         });
 
-        return back();
+        return redirect()->route('notes.show', $note);
     }
 
     public function destroy(Request $request, Note $note): RedirectResponse

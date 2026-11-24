@@ -81,6 +81,50 @@ class ReaderNavigationTest extends TestCase
         $this->get(route('reader.show', ['book' => 'JHN', 'chapter' => '22']))->assertNotFound();
     }
 
+    public function test_reader_can_return_to_an_owned_originating_note(): void
+    {
+        $edition = BibleEdition::query()->create([
+            'slug' => 'oeb', 'name' => 'Open English Bible', 'abbreviation' => 'OEB',
+            'language' => 'en', 'source_format' => 'usfm',
+        ]);
+        $book = $edition->books()->create([
+            'book_code' => 'JHN', 'name' => 'John',
+            'source_path' => '/john.usfm', 'chapter_count' => 21,
+        ]);
+        $user = User::factory()->create();
+        $note = Note::query()->create([
+            'user_id' => $user->id,
+            'bible_book_id' => $book->id,
+            'book_code' => 'JHN',
+            'chapter' => '1',
+            'anchor_type' => 'verse',
+            'title' => 'Origin note',
+            'body_markdown' => 'A linked passage.',
+            'verse_start' => '1',
+            'verse_end' => '1',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('reader.show', [
+                'book' => 'JHN',
+                'chapter' => '1',
+                'from_note' => $note->id,
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('backUrl', route('notes.show', $note, absolute: false)));
+
+        $otherUser = User::factory()->create();
+        $this->actingAs($otherUser)
+            ->get(route('reader.show', [
+                'book' => 'JHN',
+                'chapter' => '1',
+                'from_note' => $note->id,
+            ]))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('backUrl', null));
+    }
+
     public function test_reader_translation_is_a_session_override_and_does_not_change_the_default(): void
     {
         $oeb = BibleEdition::query()->create([

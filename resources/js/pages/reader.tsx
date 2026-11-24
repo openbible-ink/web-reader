@@ -231,6 +231,7 @@ function renderVerseContent(
 
 export default function Reader({
     canonicalUrl,
+    backUrl,
     edition,
     book,
     chapter,
@@ -1009,7 +1010,7 @@ export default function Reader({
             window.location.origin,
         );
         const currentUrl = new URL(window.location.href);
-        for (const parameter of ['translation', 'compare']) {
+        for (const parameter of ['translation', 'compare', 'from_note']) {
             const value = currentUrl.searchParams.get(parameter);
             if (value) nextUrl.searchParams.set(parameter, value);
         }
@@ -2052,9 +2053,15 @@ export default function Reader({
                         >
                             <div className="flex items-center gap-3">
                                 <a
-                                    href="/books"
-                                    onClick={returnToBooks}
-                                    aria-label="Back to books"
+                                    href={backUrl ?? '/books'}
+                                    onClick={
+                                        backUrl ? undefined : returnToBooks
+                                    }
+                                    aria-label={
+                                        backUrl
+                                            ? 'Back to note'
+                                            : 'Back to books'
+                                    }
                                     className={`grid size-9 place-items-center rounded-full ${readerControl}`}
                                 >
                                     <ArrowLeft className="size-5" />
@@ -3918,6 +3925,16 @@ export default function Reader({
                                                 onChange={setNoteBody}
                                                 disabled={noteProcessing}
                                                 expanded={noteExpanded}
+                                                scriptureBooks={libraryBooks.map(
+                                                    (item) => ({
+                                                        code: item.code,
+                                                        name: item.name,
+                                                        chapterCount:
+                                                            item.chapterCount,
+                                                        editionSlug:
+                                                            edition.slug,
+                                                    }),
+                                                )}
                                             />
                                             <p className="mt-2 font-sans text-xs text-stone-500">
                                                 Use the toolbar or Markdown

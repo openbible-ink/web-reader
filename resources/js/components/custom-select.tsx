@@ -26,6 +26,8 @@ interface CustomSelectProps<Value extends string = string> {
     theme?: 'light' | 'sepia' | 'dark';
     variant?: 'card' | 'inline';
     layout?: 'list' | 'chapter-grid';
+    gridColumns?: 6 | 8 | 10;
+    gridMinWidth?: number;
     className?: string;
     triggerClassName?: string;
     placeholder?: string;
@@ -41,6 +43,8 @@ export default function CustomSelect<Value extends string = string>({
     theme = 'light',
     variant = 'card',
     layout = 'list',
+    gridColumns = 6,
+    gridMinWidth = 300,
     className = '',
     triggerClassName = '',
     placeholder = 'Select an option',
@@ -107,9 +111,12 @@ export default function CustomSelect<Value extends string = string>({
     const updatePosition = useCallback(() => {
         const rect = buttonRef.current?.getBoundingClientRect();
         if (!rect) return;
-        const width = Math.max(
-            rect.width,
-            layout === 'chapter-grid' ? 300 : 220,
+        const width = Math.min(
+            window.innerWidth - 24,
+            Math.max(
+                rect.width,
+                layout === 'chapter-grid' ? gridMinWidth : 220,
+            ),
         );
         setPosition({
             left: Math.min(
@@ -119,7 +126,7 @@ export default function CustomSelect<Value extends string = string>({
             top: rect.bottom + 8,
             width,
         });
-    }, [layout]);
+    }, [gridMinWidth, layout]);
 
     useLayoutEffect(() => {
         if (!open) return;
@@ -175,11 +182,11 @@ export default function CustomSelect<Value extends string = string>({
             const step =
                 event.key === 'ArrowDown'
                     ? layout === 'chapter-grid'
-                        ? 6
+                        ? gridColumns
                         : 1
                     : event.key === 'ArrowUp'
                       ? layout === 'chapter-grid'
-                          ? -6
+                          ? -gridColumns
                           : -1
                       : event.key === 'ArrowRight'
                         ? 1
@@ -255,7 +262,7 @@ export default function CustomSelect<Value extends string = string>({
                         aria-activedescendant={`${id}-option-${activeIndex}`}
                         tabIndex={-1}
                         onKeyDown={handleMenuKeyDown}
-                        className={`fixed z-[120] max-h-72 overflow-y-auto rounded-2xl border shadow-[0_18px_55px_rgba(45,35,25,0.2)] backdrop-blur-xl outline-none ${layout === 'chapter-grid' ? 'grid grid-cols-6 gap-2 p-3' : 'p-1.5'} ${palette.menu}`}
+                        className={`fixed z-[120] max-h-72 overflow-y-auto rounded-2xl border shadow-[0_18px_55px_rgba(45,35,25,0.2)] backdrop-blur-xl outline-none ${layout === 'chapter-grid' ? `grid gap-2 p-3 ${gridColumns === 10 ? 'grid-cols-10' : gridColumns === 8 ? 'grid-cols-8' : 'grid-cols-6'}` : 'p-1.5'} ${palette.menu}`}
                         style={{
                             left: position.left,
                             top: position.top,

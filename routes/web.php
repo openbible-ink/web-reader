@@ -48,6 +48,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::patch('highlights/{highlight}', [HighlightController::class, 'update'])->name('highlights.update');
     Route::delete('highlights/{highlight}', [HighlightController::class, 'destroy'])->name('highlights.destroy');
     Route::get('notes', [NoteController::class, 'index'])->name('notes.index');
+    Route::get('notes/{note}/export', [NoteController::class, 'export'])->name('notes.export');
     Route::get('notes/{note}', [NoteController::class, 'show'])->name('notes.show');
     Route::post('notes', [NoteController::class, 'store'])->name('notes.store');
     Route::patch('notes/{note}', [NoteController::class, 'update'])->name('notes.update');
