@@ -641,7 +641,8 @@ export default function Notes({
                         </label>
                         <input
                             id="note-search"
-                            type="search"
+                            type="text"
+                            inputMode="search"
                             value={searchValue}
                             onChange={(event) =>
                                 setSearchValue(event.target.value)
