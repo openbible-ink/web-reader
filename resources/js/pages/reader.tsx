@@ -399,6 +399,9 @@ export default function Reader({
     const [footnotePreview, setFootnotePreview] = useState<FootnotePreview>();
     const [wordStudyPreview, setWordStudyPreview] =
         useState<WordStudyPreview>();
+    const [wordStudyClosing, setWordStudyClosing] = useState(false);
+    const [wordStudyOccurrencesLoading, setWordStudyOccurrencesLoading] =
+        useState(false);
     const wordStudyCache = useRef(new Map<string, WordStudyEntry>());
     const [noteOpen, setNoteOpen] = useState(false);
     const [noteClosing, setNoteClosing] = useState(false);
@@ -426,11 +429,24 @@ export default function Reader({
     const highlightRef = useRef<HTMLDivElement>(null);
     const footnoteRef = useRef<HTMLDivElement>(null);
     const wordStudyRef = useRef<HTMLDivElement>(null);
+    const wordStudyOccurrencesRef = useRef<HTMLDivElement>(null);
     const heroArtworkRef = useRef<HTMLDivElement>(null);
     const heroTextRef = useRef<HTMLDivElement>(null);
     const resolvedVerseTargetRef = useRef<string | null>(null);
     const readerMainRef = useRef<HTMLElement>(null);
     const readerArticleRef = useRef<HTMLElement>(null);
+    const closeWordStudy = useCallback(() => {
+        if (wordStudyClosing) return;
+        const duration = window.matchMedia('(prefers-reduced-motion: reduce)')
+            .matches
+            ? 0
+            : 300;
+        setWordStudyClosing(true);
+        window.setTimeout(() => {
+            setWordStudyPreview(undefined);
+            setWordStudyClosing(false);
+        }, duration);
+    }, [wordStudyClosing]);
     const closeNoteDrawer = useCallback(() => {
         if (noteClosing) return;
         const duration = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -503,7 +519,7 @@ export default function Reader({
             setBookmarkOpen(false);
             setHighlightOpen(false);
             setFootnotePreview(undefined);
-            setWordStudyPreview(undefined);
+            closeWordStudy();
             closeNoteDrawer();
         };
         const dismissOnOutsidePointer = (event: PointerEvent) => {
@@ -541,16 +557,6 @@ export default function Reader({
             ) {
                 setFootnotePreview(undefined);
             }
-            if (
-                wordStudyPreview &&
-                !wordStudyRef.current?.contains(target) &&
-                !(
-                    target instanceof Element &&
-                    target.closest('[data-strong-word-trigger]')
-                )
-            ) {
-                setWordStudyPreview(undefined);
-            }
         };
 
         window.document.addEventListener('keydown', dismissOnEscape);
@@ -568,6 +574,7 @@ export default function Reader({
     }, [
         bookmarkOpen,
         closeNoteDrawer,
+        closeWordStudy,
         editionPreferencesOpen,
         footnotePreview,
         highlightOpen,
@@ -614,14 +621,14 @@ export default function Reader({
     const openWordStudy = useCallback(
         (strong: string, surface: string, trigger: HTMLButtonElement) => {
             if (wordStudyPreview?.strong === strong) {
-                setWordStudyPreview(undefined);
+                closeWordStudy();
                 return;
             }
 
             const rect = trigger.getBoundingClientRect();
             const placement =
                 window.innerHeight - rect.bottom < 420 ? 'above' : 'below';
-            const cached = wordStudyCache.current.get(strong);
+            const cached = wordStudyCache.current.get(`${strong}:1`);
             const preview: WordStudyPreview = {
                 strong,
                 surface,
@@ -643,10 +650,12 @@ export default function Reader({
                 },
             };
             setFootnotePreview(undefined);
+            setWordStudyClosing(false);
+            setWordStudyOccurrencesLoading(false);
             setWordStudyPreview(preview);
             if (cached) return;
 
-            void fetch(`/api/v1/word-study/${strong}`, {
+            void fetch(`/api/v1/word-study/${strong}?page=1`, {
                 headers: { Accept: 'application/json' },
             })
                 .then(async (response) => {
@@ -655,7 +664,7 @@ export default function Reader({
                     return (await response.json()) as WordStudyEntry;
                 })
                 .then((entry) => {
-                    wordStudyCache.current.set(strong, entry);
+                    wordStudyCache.current.set(`${strong}:1`, entry);
                     setWordStudyPreview((current) =>
                         current?.strong === strong
                             ? { ...current, entry, loading: false }
@@ -674,7 +683,61 @@ export default function Reader({
                     );
                 });
         },
-        [wordStudyPreview?.strong],
+        [closeWordStudy, wordStudyPreview?.strong],
+    );
+
+    const loadWordStudyOccurrencePage = useCallback(
+        (page: number) => {
+            if (!wordStudyPreview?.entry || wordStudyOccurrencesLoading) return;
+            const { strong } = wordStudyPreview;
+            const cacheKey = `${strong}:${page}`;
+            const cached = wordStudyCache.current.get(cacheKey);
+            const scrollToOccurrences = () => {
+                window.requestAnimationFrame(() =>
+                    wordStudyOccurrencesRef.current?.scrollIntoView({
+                        block: 'start',
+                        behavior: window.matchMedia(
+                            '(prefers-reduced-motion: reduce)',
+                        ).matches
+                            ? 'auto'
+                            : 'smooth',
+                    }),
+                );
+            };
+            if (cached) {
+                setWordStudyPreview((current) =>
+                    current?.strong === strong
+                        ? { ...current, entry: cached }
+                        : current,
+                );
+                scrollToOccurrences();
+                return;
+            }
+
+            setWordStudyOccurrencesLoading(true);
+            void fetch(`/api/v1/word-study/${strong}?page=${page}`, {
+                headers: { Accept: 'application/json' },
+            })
+                .then(async (response) => {
+                    if (!response.ok)
+                        throw new Error('Unable to load occurrences');
+                    return (await response.json()) as WordStudyEntry;
+                })
+                .then((entry) => {
+                    wordStudyCache.current.set(cacheKey, entry);
+                    setWordStudyPreview((current) =>
+                        current?.strong === strong
+                            ? { ...current, entry }
+                            : current,
+                    );
+                    scrollToOccurrences();
+                })
+                .catch(() =>
+                    toast.error('The next occurrences could not be loaded.'),
+                )
+                .finally(() => setWordStudyOccurrencesLoading(false));
+        },
+        [wordStudyOccurrencesLoading, wordStudyPreview],
     );
 
     useEffect(() => {
@@ -4219,135 +4282,230 @@ export default function Reader({
 
                 {wordStudyPreview && !noteOpen && (
                     <div
-                        ref={wordStudyRef}
-                        role="dialog"
-                        aria-label={`Word study for ${wordStudyPreview.surface}`}
-                        className={`fixed z-[73] max-h-[min(34rem,calc(100vh-2rem))] w-[min(25rem,calc(100vw-2rem))] -translate-x-1/2 overflow-y-auto rounded-2xl border border-[#d9cbbb] bg-[#fffdf9] text-stone-800 shadow-[0_18px_55px_rgba(41,37,36,0.26)] ${wordStudyPreview.position.placement === 'above' ? '-translate-y-full' : ''}`}
-                        style={{
-                            top: wordStudyPreview.position.top,
-                            left: wordStudyPreview.position.left,
-                        }}
+                        className={`fixed inset-0 z-[73] bg-stone-950/25 backdrop-blur-[2px] transition-[opacity,backdrop-filter] duration-300 motion-reduce:transition-none ${wordStudyClosing ? 'opacity-0 backdrop-blur-none' : 'animate-in fade-in opacity-100'}`}
                     >
-                        <div className="sticky top-0 flex items-start justify-between gap-4 border-b border-[#e6ddd1] bg-[#fffdf9]/95 px-5 py-4 backdrop-blur-sm">
-                            <div>
-                                <p className="font-sans text-[0.62rem] font-semibold tracking-[0.18em] text-[#9a5428] uppercase">
-                                    Original-language study
-                                </p>
-                                <p className="mt-1 font-sans text-xs text-stone-500">
-                                    {wordStudyPreview.strong}
-                                    {wordStudyPreview.entry
-                                        ? ` · ${wordStudyPreview.entry.language}`
-                                        : ''}
-                                </p>
-                            </div>
-                            <button
-                                type="button"
-                                aria-label="Close word study"
-                                onClick={() => setWordStudyPreview(undefined)}
-                                className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full text-stone-500 hover:bg-stone-100 hover:text-stone-950 focus-visible:outline-2 focus-visible:outline-[#9a5428]"
-                            >
-                                <X className="size-4" />
-                            </button>
-                        </div>
-                        {wordStudyPreview.loading && (
-                            <div
-                                className="space-y-4 px-5 py-5"
-                                aria-live="polite"
-                            >
-                                <span className="sr-only">
-                                    Loading word-study details
-                                </span>
-                                <div className="h-9 w-2/3 animate-pulse rounded-lg bg-stone-200" />
-                                <div className="h-4 w-1/3 animate-pulse rounded bg-stone-200" />
-                                <div className="space-y-2">
-                                    <div className="h-3 w-full animate-pulse rounded bg-stone-200" />
-                                    <div className="h-3 w-5/6 animate-pulse rounded bg-stone-200" />
+                        <button
+                            type="button"
+                            className="absolute inset-0 cursor-default"
+                            aria-label="Close word study"
+                            onClick={closeWordStudy}
+                        />
+                        <aside
+                            ref={wordStudyRef}
+                            role="dialog"
+                            aria-modal="true"
+                            aria-label={`Word study for ${wordStudyPreview.surface}`}
+                            className={`absolute inset-y-0 right-0 flex w-[min(32rem,94vw)] flex-col border-l border-[#d9cbbb] bg-[#fffdf9] text-stone-800 shadow-[-24px_0_70px_rgba(41,37,36,0.24)] transition-transform duration-300 ease-out motion-reduce:transition-none ${wordStudyClosing ? 'translate-x-full' : 'animate-in slide-in-from-right translate-x-0'}`}
+                        >
+                            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-[#e6ddd1] bg-[#fffdf9]/95 px-6 py-5 backdrop-blur-sm sm:px-8">
+                                <div>
+                                    <p className="font-sans text-[0.62rem] font-semibold tracking-[0.18em] text-[#9a5428] uppercase">
+                                        Original-language study
+                                    </p>
+                                    <p className="mt-1 font-sans text-xs text-stone-500">
+                                        {wordStudyPreview.strong}
+                                        {wordStudyPreview.entry
+                                            ? ` · ${wordStudyPreview.entry.language}`
+                                            : ''}
+                                    </p>
                                 </div>
-                            </div>
-                        )}
-                        {wordStudyPreview.error && (
-                            <p className="px-5 py-5 font-serif text-sm text-[#8f302b]">
-                                {wordStudyPreview.error}
-                            </p>
-                        )}
-                        {wordStudyPreview.entry && (
-                            <div className="px-5 py-5">
-                                <p
-                                    className="font-serif text-4xl leading-tight font-semibold"
-                                    lang={
-                                        wordStudyPreview.entry.language ===
-                                        'Hebrew'
-                                            ? 'he'
-                                            : 'grc'
-                                    }
-                                    dir={
-                                        wordStudyPreview.entry.language ===
-                                        'Hebrew'
-                                            ? 'rtl'
-                                            : 'ltr'
-                                    }
+                                <button
+                                    type="button"
+                                    aria-label="Close word study"
+                                    onClick={closeWordStudy}
+                                    className="grid size-10 shrink-0 cursor-pointer place-items-center rounded-full border border-[#ddd0bf] text-stone-500 hover:bg-stone-100 hover:text-stone-950 focus-visible:outline-2 focus-visible:outline-[#9a5428]"
                                 >
-                                    {wordStudyPreview.entry.lemma}
-                                </p>
-                                <p className="mt-1 font-sans text-sm text-stone-500">
-                                    {wordStudyPreview.entry.transliteration}
-                                    {wordStudyPreview.entry.pronunciation
-                                        ? ` · ${wordStudyPreview.entry.pronunciation}`
-                                        : ''}
-                                </p>
-                                <p className="mt-4 font-serif text-base leading-6">
-                                    {wordStudyPreview.entry.definition ||
-                                        wordStudyPreview.entry.usage}
-                                </p>
-                                {wordStudyPreview.entry.usage && (
-                                    <p className="mt-2 font-sans text-xs leading-5 text-stone-500">
-                                        Traditionally rendered:{' '}
-                                        {wordStudyPreview.entry.usage}
+                                    <X className="size-4" />
+                                </button>
+                            </div>
+                            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                                {wordStudyPreview.loading && (
+                                    <div
+                                        className="space-y-4 px-5 py-5"
+                                        aria-live="polite"
+                                    >
+                                        <span className="sr-only">
+                                            Loading word-study details
+                                        </span>
+                                        <div className="h-9 w-2/3 animate-pulse rounded-lg bg-stone-200" />
+                                        <div className="h-4 w-1/3 animate-pulse rounded bg-stone-200" />
+                                        <div className="space-y-2">
+                                            <div className="h-3 w-full animate-pulse rounded bg-stone-200" />
+                                            <div className="h-3 w-5/6 animate-pulse rounded bg-stone-200" />
+                                        </div>
+                                    </div>
+                                )}
+                                {wordStudyPreview.error && (
+                                    <p className="px-5 py-5 font-serif text-sm text-[#8f302b]">
+                                        {wordStudyPreview.error}
                                     </p>
                                 )}
-                                <div className="mt-5 border-t border-[#e6ddd1] pt-4">
-                                    <div className="flex items-baseline justify-between gap-3">
-                                        <h3 className="font-serif text-base font-semibold">
-                                            Occurrences
-                                        </h3>
-                                        <span className="font-sans text-xs text-stone-500">
+                                {wordStudyPreview.entry && (
+                                    <div className="px-6 py-6 sm:px-8 sm:py-8">
+                                        <p
+                                            className="font-serif text-4xl leading-tight font-semibold"
+                                            lang={
+                                                wordStudyPreview.entry
+                                                    .language === 'Hebrew'
+                                                    ? 'he'
+                                                    : 'grc'
+                                            }
+                                            dir={
+                                                wordStudyPreview.entry
+                                                    .language === 'Hebrew'
+                                                    ? 'rtl'
+                                                    : 'ltr'
+                                            }
+                                        >
+                                            {wordStudyPreview.entry.lemma}
+                                        </p>
+                                        <p className="mt-1 font-sans text-sm text-stone-500">
                                             {
                                                 wordStudyPreview.entry
-                                                    .occurrenceCount
-                                            }{' '}
+                                                    .transliteration
+                                            }
                                             {wordStudyPreview.entry
-                                                .occurrenceCount === 1
-                                                ? 'verse'
-                                                : 'verses'}{' '}
-                                            in WEB
-                                        </span>
-                                    </div>
-                                    <div className="mt-2 divide-y divide-[#ece4d9]">
-                                        {wordStudyPreview.entry.occurrences.map(
-                                            (occurrence) => (
-                                                <a
-                                                    key={`${wordStudyPreview.strong}-${occurrence.reference}`}
-                                                    href={occurrence.url}
-                                                    className="block py-3 focus-visible:outline-2 focus-visible:outline-[#9a5428]"
-                                                >
-                                                    <span className="font-sans text-xs font-semibold text-[#9a5428]">
-                                                        {occurrence.reference}
-                                                    </span>
-                                                    <span className="mt-1 line-clamp-2 block font-serif text-sm leading-5 text-stone-600">
-                                                        {occurrence.text}
-                                                    </span>
-                                                </a>
-                                            ),
+                                                .pronunciation
+                                                ? ` · ${wordStudyPreview.entry.pronunciation}`
+                                                : ''}
+                                        </p>
+                                        <p className="mt-4 font-serif text-base leading-6">
+                                            {wordStudyPreview.entry
+                                                .definition ||
+                                                wordStudyPreview.entry.usage}
+                                        </p>
+                                        {wordStudyPreview.entry.usage && (
+                                            <p className="mt-2 font-sans text-xs leading-5 text-stone-500">
+                                                Traditionally rendered:{' '}
+                                                {wordStudyPreview.entry.usage}
+                                            </p>
                                         )}
+                                        <div
+                                            ref={wordStudyOccurrencesRef}
+                                            className="mt-5 scroll-mt-4 border-t border-[#e6ddd1] pt-4"
+                                        >
+                                            <div className="flex items-baseline justify-between gap-3">
+                                                <h3 className="font-serif text-base font-semibold">
+                                                    Occurrences
+                                                </h3>
+                                                <span className="font-sans text-xs text-stone-500">
+                                                    {
+                                                        wordStudyPreview.entry
+                                                            .occurrenceCount
+                                                    }{' '}
+                                                    {wordStudyPreview.entry
+                                                        .occurrenceCount === 1
+                                                        ? 'verse'
+                                                        : 'verses'}{' '}
+                                                    in WEB
+                                                </span>
+                                            </div>
+                                            <div className="mt-2 divide-y divide-[#ece4d9]">
+                                                {wordStudyPreview.entry.occurrences.map(
+                                                    (occurrence) => (
+                                                        <a
+                                                            key={`${wordStudyPreview.strong}-${occurrence.reference}`}
+                                                            href={
+                                                                occurrence.url
+                                                            }
+                                                            className="block py-3 focus-visible:outline-2 focus-visible:outline-[#9a5428]"
+                                                        >
+                                                            <span className="font-sans text-xs font-semibold text-[#9a5428]">
+                                                                {
+                                                                    occurrence.reference
+                                                                }
+                                                            </span>
+                                                            <span className="mt-1 line-clamp-2 block font-serif text-sm leading-5 text-stone-600">
+                                                                {
+                                                                    occurrence.text
+                                                                }
+                                                            </span>
+                                                        </a>
+                                                    ),
+                                                )}
+                                            </div>
+                                        </div>
+                                        <p className="mt-4 border-t border-[#e6ddd1] pt-3 font-sans text-[0.65rem] leading-4 text-stone-400">
+                                            {wordStudyPreview.entry.attribution}{' '}
+                                            Definitions are concise study aids,
+                                            not a substitute for a modern
+                                            scholarly lexicon.
+                                        </p>
                                     </div>
-                                </div>
-                                <p className="mt-4 border-t border-[#e6ddd1] pt-3 font-sans text-[0.65rem] leading-4 text-stone-400">
-                                    {wordStudyPreview.entry.attribution}{' '}
-                                    Definitions are concise study aids, not a
-                                    substitute for a modern scholarly lexicon.
-                                </p>
+                                )}
                             </div>
-                        )}
+                            {wordStudyPreview.entry && (
+                                <footer className="flex shrink-0 items-center justify-between gap-4 border-t border-[#e1d6c8] bg-[#faf4ea] px-6 py-4 shadow-[0_-10px_28px_rgba(61,45,28,0.07)] sm:px-8">
+                                    <p
+                                        className="font-sans text-xs text-stone-500"
+                                        aria-live="polite"
+                                    >
+                                        {wordStudyOccurrencesLoading
+                                            ? 'Loading occurrences…'
+                                            : `Showing ${wordStudyPreview.entry.occurrencePagination.from ?? 0}–${wordStudyPreview.entry.occurrencePagination.to ?? 0} of ${wordStudyPreview.entry.occurrenceCount}`}
+                                    </p>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                loadWordStudyOccurrencePage(
+                                                    wordStudyPreview.entry!
+                                                        .occurrencePagination
+                                                        .currentPage - 1,
+                                                )
+                                            }
+                                            disabled={
+                                                wordStudyOccurrencesLoading ||
+                                                wordStudyPreview.entry
+                                                    .occurrencePagination
+                                                    .currentPage <= 1
+                                            }
+                                            className="grid size-9 cursor-pointer place-items-center rounded-full border border-[#d8cab8] text-stone-700 transition hover:bg-[#f2e8da] focus-visible:outline-2 focus-visible:outline-[#9a5428] disabled:cursor-not-allowed disabled:opacity-35"
+                                            aria-label="Previous occurrences"
+                                        >
+                                            <ArrowLeft className="size-4" />
+                                        </button>
+                                        <span className="min-w-16 text-center font-sans text-xs text-stone-500">
+                                            Page{' '}
+                                            {
+                                                wordStudyPreview.entry
+                                                    .occurrencePagination
+                                                    .currentPage
+                                            }{' '}
+                                            of{' '}
+                                            {
+                                                wordStudyPreview.entry
+                                                    .occurrencePagination
+                                                    .lastPage
+                                            }
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                loadWordStudyOccurrencePage(
+                                                    wordStudyPreview.entry!
+                                                        .occurrencePagination
+                                                        .currentPage + 1,
+                                                )
+                                            }
+                                            disabled={
+                                                wordStudyOccurrencesLoading ||
+                                                wordStudyPreview.entry
+                                                    .occurrencePagination
+                                                    .currentPage >=
+                                                    wordStudyPreview.entry
+                                                        .occurrencePagination
+                                                        .lastPage
+                                            }
+                                            className="grid size-9 cursor-pointer place-items-center rounded-full border border-[#d8cab8] text-stone-700 transition hover:bg-[#f2e8da] focus-visible:outline-2 focus-visible:outline-[#9a5428] disabled:cursor-not-allowed disabled:opacity-35"
+                                            aria-label="Next occurrences"
+                                        >
+                                            <ArrowRight className="size-4" />
+                                        </button>
+                                    </div>
+                                </footer>
+                            )}
+                        </aside>
                     </div>
                 )}
 

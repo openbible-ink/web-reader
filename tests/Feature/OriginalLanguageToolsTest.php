@@ -70,6 +70,10 @@ class OriginalLanguageToolsTest extends TestCase
             ->assertJsonPath('language', 'Greek')
             ->assertJsonPath('lemma', 'ἀρχή')
             ->assertJsonPath('occurrenceCount', 1)
+            ->assertJsonPath('occurrencePagination.currentPage', 1)
+            ->assertJsonPath('occurrencePagination.lastPage', 1)
+            ->assertJsonPath('occurrencePagination.from', 1)
+            ->assertJsonPath('occurrencePagination.to', 1)
             ->assertJsonPath('occurrences.0.reference', 'John 1:1');
     }
 }

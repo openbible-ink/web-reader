@@ -103,6 +103,13 @@ export interface WordStudyEntry {
     usage?: string | null;
     derivation?: string | null;
     occurrenceCount: number;
+    occurrencePagination: {
+        currentPage: number;
+        lastPage: number;
+        perPage: number;
+        from: number | null;
+        to: number | null;
+    };
     occurrences: Array<{
         reference: string;
         text: string;
