@@ -29,9 +29,10 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property bool $red_letter_words
+ * @property bool $original_language_tools
  * @property array<string, string>|null $highlight_colour_labels
  */
-#[Fillable(['username', 'name', 'email', 'password', 'preferred_edition_id', 'highlight_colour_labels', 'red_letter_words'])]
+#[Fillable(['username', 'name', 'email', 'password', 'preferred_edition_id', 'highlight_colour_labels', 'red_letter_words', 'original_language_tools'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements PasskeyUser
 {
@@ -87,6 +88,7 @@ class User extends Authenticatable implements PasskeyUser
             'two_factor_confirmed_at' => 'datetime',
             'highlight_colour_labels' => 'array',
             'red_letter_words' => 'boolean',
+            'original_language_tools' => 'boolean',
         ];
     }
 }

@@ -40,7 +40,7 @@ const navigation = [
         icon: DashboardIcon,
         href: '/dashboard',
     },
-    { key: 'read', label: 'Read', icon: BookOpen, href: '/read/JHN/1' },
+    { key: 'read', label: 'Read', icon: BookOpen, href: '/books' },
     { key: 'search', label: 'Search', icon: Search, href: '/search' },
     { key: 'notes', label: 'Notes', icon: NotebookPen, href: '/notes' },
     {

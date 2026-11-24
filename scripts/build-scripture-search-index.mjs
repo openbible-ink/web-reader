@@ -44,6 +44,7 @@ function extractVerses(document) {
         current.text = current.text.replace(/\s+/gu, ' ').trim();
         current.footnoteText =
             current.footnoteText.replace(/\s+/gu, ' ').trim() || null;
+        current.strongNumbers = [...current.strongNumbers];
         if (current.text) {
             const key = `${current.chapter}:${current.verse}`;
             const existing = verseByReference.get(key);
@@ -62,6 +63,10 @@ function extractVerses(document) {
                     ]
                         .filter(Boolean)
                         .join(' ');
+                }
+                for (const strong of current.strongNumbers) {
+                    if (!existing.strongNumbers.includes(strong))
+                        existing.strongNumbers.push(strong);
                 }
             } else {
                 verseByReference.set(key, current);
@@ -95,12 +100,26 @@ function extractVerses(document) {
                 sectionKey,
                 sectionTitle,
                 footnoteText: '',
+                strongNumbers: new Set(),
                 text: '',
             };
             return;
         }
         if (node.type === 'text' && current) {
             current.text += node.value;
+            return;
+        }
+        if (
+            node.type === 'inline' &&
+            (node.style === 'w' || node.style === '+w') &&
+            current
+        ) {
+            for (const strong of (node.attributes?.strong ?? '').matchAll(
+                /[GH][0-9]{1,5}/giu,
+            )) {
+                current.strongNumbers.add(strong[0].toUpperCase());
+            }
+            node.children?.forEach(visit);
             return;
         }
         if (node.type === 'note') {

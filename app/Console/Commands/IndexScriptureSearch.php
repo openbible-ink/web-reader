@@ -75,6 +75,9 @@ class IndexScriptureSearch extends Command
                             ? mb_substr($verse['sectionTitle'], 0, 255)
                             : null,
                         'footnote_text' => $verse['footnoteText'] ?? null,
+                        'strong_numbers' => isset($verse['strongNumbers'])
+                            ? json_encode($verse['strongNumbers'], JSON_THROW_ON_ERROR)
+                            : null,
                         'text' => $verse['text'],
                         'created_at' => $now,
                         'updated_at' => $now,

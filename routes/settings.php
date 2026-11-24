@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\DefaultTranslationController;
 use App\Http\Controllers\HighlightLabelController;
+use App\Http\Controllers\OriginalLanguageToolsController;
 use App\Http\Controllers\RedLetterWordsController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
@@ -19,6 +20,8 @@ Route::middleware(['auth'])->group(function () {
         ->name('highlight-labels.update');
     Route::patch('settings/red-letter-words', RedLetterWordsController::class)
         ->name('red-letter-words.update');
+    Route::patch('settings/original-language-tools', OriginalLanguageToolsController::class)
+        ->name('original-language-tools.update');
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {

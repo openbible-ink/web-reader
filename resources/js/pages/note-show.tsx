@@ -54,6 +54,10 @@ interface LinkedPassage {
     chapter: string;
     verseStart: string;
     verseEnd: string;
+    kind?: 'link' | 'attachment';
+    label?: string;
+    readerUrl?: string;
+    selectedText?: string | null;
 }
 
 interface PassageVerse {
@@ -200,7 +204,6 @@ export default function NoteShow({
     editUrl,
     exportUrl,
 }: NotePageProps) {
-    const [passageOpen, setPassageOpen] = useState(false);
     const [source, setSource] = useState(() =>
         cachedScriptureSource(book.sourceUrl),
     );
@@ -225,19 +228,18 @@ export default function NoteShow({
     }, [book.sourceUrl, note.selectedText, source]);
 
     useEffect(() => {
-        if (!passageOpen && !linkedPassage) return;
+        if (!linkedPassage) return;
         const dismiss = (event: KeyboardEvent) => {
             if (event.key === 'Escape') {
-                setPassageOpen(false);
                 if (linkedPassage) closeLinkedPassage();
             }
         };
         window.document.addEventListener('keydown', dismiss);
         return () => window.document.removeEventListener('keydown', dismiss);
-    }, [closeLinkedPassage, linkedPassage, passageOpen]);
+    }, [closeLinkedPassage, linkedPassage]);
 
     useEffect(() => {
-        if (!linkedPassage) return;
+        if (!linkedPassage || linkedPassage.kind === 'attachment') return;
         let active = true;
         setLinkedDocument(undefined);
         setLinkedPassageError(false);
@@ -294,20 +296,36 @@ export default function NoteShow({
         : undefined;
     const linkedVerses = useMemo(
         () =>
-            linkedPassage && linkedDocument
-                ? passageVerses(
-                      linkedDocument,
-                      linkedPassage.chapter,
-                      linkedPassage.chapter,
-                      linkedPassage.verseStart,
-                      linkedPassage.verseEnd,
-                  )
-                : [],
-        [linkedDocument, linkedPassage],
+            linkedPassage?.kind === 'attachment'
+                ? verses
+                : linkedPassage && linkedDocument
+                  ? passageVerses(
+                        linkedDocument,
+                        linkedPassage.chapter,
+                        linkedPassage.chapter,
+                        linkedPassage.verseStart,
+                        linkedPassage.verseEnd,
+                    )
+                  : [],
+        [linkedDocument, linkedPassage, verses],
     );
     const linkedPassageLabel = linkedPassage
-        ? `${linkedBook?.name ?? linkedPassage.bookCode} ${linkedPassage.chapter}:${linkedPassage.verseStart}${linkedPassage.verseEnd !== linkedPassage.verseStart ? `–${linkedPassage.verseEnd}` : ''}`
+        ? (linkedPassage.label ??
+          `${linkedBook?.name ?? linkedPassage.bookCode} ${linkedPassage.chapter}:${linkedPassage.verseStart}${linkedPassage.verseEnd !== linkedPassage.verseStart ? `–${linkedPassage.verseEnd}` : ''}`)
         : '';
+    const openAttachedPassage = () => {
+        setLinkedPassageClosing(false);
+        setLinkedPassage({
+            bookCode: book.code,
+            chapter: note.chapter,
+            verseStart: note.verseStart ?? '1',
+            verseEnd: note.verseEnd ?? note.verseStart ?? '1',
+            kind: 'attachment',
+            label: note.attachmentLabel,
+            readerUrl,
+            selectedText: note.selectedText,
+        });
+    };
     const openScriptureLink = (href: string) => {
         const url = new URL(href, window.location.origin);
         const path = url.pathname.match(/^\/read\/([A-Za-z0-9]{3})\/(\d+)$/);
@@ -321,6 +339,7 @@ export default function NoteShow({
             chapter: path[2],
             verseStart: range[1],
             verseEnd: range[2] ?? range[1],
+            kind: 'link',
         });
     };
 
@@ -375,89 +394,16 @@ export default function NoteShow({
                                 <div className="relative mt-6 inline-block">
                                     <button
                                         type="button"
-                                        onClick={() =>
-                                            setPassageOpen((open) => !open)
-                                        }
+                                        onClick={openAttachedPassage}
                                         className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbcbb7] bg-[#f7efe3] px-4 py-2 font-serif text-sm text-[#70522f] transition hover:border-[#c5a57c] hover:bg-[#f2e5d3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9a5428]"
-                                        aria-expanded={passageOpen}
-                                        aria-controls="attached-passage"
+                                        aria-expanded={
+                                            linkedPassage?.kind === 'attachment'
+                                        }
+                                        aria-controls="linked-passage-drawer"
                                     >
                                         <BookOpen className="size-4" />
                                         {note.attachmentLabel}
                                     </button>
-
-                                    {passageOpen && (
-                                        <div
-                                            id="attached-passage"
-                                            role="dialog"
-                                            aria-label={`Attached passage: ${note.attachmentLabel}`}
-                                            className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100svh-2rem)] w-[min(38rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-[#d8cab8] bg-[#fffaf2] text-left shadow-[0_22px_65px_rgba(48,36,24,0.2)]"
-                                        >
-                                            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-[#e4d8c9] px-5 py-4">
-                                                <div>
-                                                    <p className="font-sans text-[0.61rem] font-semibold tracking-[0.2em] text-[#9a5428] uppercase">
-                                                        Attached passage
-                                                    </p>
-                                                    <h2 className="mt-1 font-serif text-xl font-semibold">
-                                                        {note.attachmentLabel}
-                                                    </h2>
-                                                    {note.sectionTitle && (
-                                                        <p className="mt-0.5 font-sans text-xs text-[#7c746a]">
-                                                            {note.reference}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        setPassageOpen(false)
-                                                    }
-                                                    className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-[#9a5428]"
-                                                    aria-label="Close passage"
-                                                >
-                                                    <X className="size-4" />
-                                                </button>
-                                            </div>
-                                            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 font-serif text-base leading-7 text-[#484139]">
-                                                {note.selectedText ? (
-                                                    <blockquote className="border-l-2 border-[#b66b36] pl-4 italic">
-                                                        “{note.selectedText}”
-                                                    </blockquote>
-                                                ) : verses.length ? (
-                                                    <div className="grid gap-3">
-                                                        {passageContent(
-                                                            verses,
-                                                            Boolean(
-                                                                note.chapterEnd &&
-                                                                note.chapterEnd !==
-                                                                    note.chapter,
-                                                            ),
-                                                        )}
-                                                    </div>
-                                                ) : sourceError ? (
-                                                    <p className="text-[#81776c] italic">
-                                                        The passage could not be
-                                                        loaded just now.
-                                                    </p>
-                                                ) : (
-                                                    <p className="text-[#81776c] italic">
-                                                        Preparing the passage…
-                                                    </p>
-                                                )}
-                                            </div>
-                                            <div className="shrink-0 border-t border-[#e4d8c9] px-5 py-4">
-                                                <Link
-                                                    href={readerUrl}
-                                                    className="inline-flex items-center gap-2 font-serif text-sm font-semibold text-[#75512b] hover:text-[#3f2b17]"
-                                                >
-                                                    Read in context
-                                                    <span aria-hidden="true">
-                                                        →
-                                                    </span>
-                                                </Link>
-                                            </div>
-                                        </div>
-                                    )}
                                 </div>
                                 {note.tags.length > 0 && (
                                     <ul
@@ -507,6 +453,7 @@ export default function NoteShow({
                                 onClick={closeLinkedPassage}
                             />
                             <aside
+                                id="linked-passage-drawer"
                                 role="dialog"
                                 aria-modal="true"
                                 aria-labelledby="linked-passage-title"
@@ -515,8 +462,10 @@ export default function NoteShow({
                                 <header className="flex shrink-0 items-start justify-between gap-6 border-b border-[#e4d8c9] px-6 py-6 sm:px-9">
                                     <div>
                                         <p className="font-sans text-[0.64rem] font-semibold tracking-[0.22em] text-[#9a5428] uppercase">
-                                            Scripture reference ·{' '}
-                                            {edition.abbreviation}
+                                            {linkedPassage.kind === 'attachment'
+                                                ? 'Attached passage'
+                                                : 'Scripture reference'}{' '}
+                                            · {edition.abbreviation}
                                         </p>
                                         <h2
                                             id="linked-passage-title"
@@ -535,14 +484,18 @@ export default function NoteShow({
                                     </button>
                                 </header>
                                 <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-8 sm:px-9 sm:py-10">
-                                    {linkedVerses.length ? (
+                                    {linkedPassage.selectedText ? (
+                                        <blockquote className="border-l-2 border-[#b66b36] pl-5 font-serif text-xl leading-9 text-[#332f2a] italic">
+                                            “{linkedPassage.selectedText}”
+                                        </blockquote>
+                                    ) : linkedVerses.length ? (
                                         <div className="grid gap-5 font-serif text-xl leading-9 text-[#332f2a]">
                                             {passageContent(
                                                 linkedVerses,
                                                 false,
                                             )}
                                         </div>
-                                    ) : linkedPassageError ? (
+                                    ) : linkedPassageError || sourceError ? (
                                         <p className="font-serif text-[#81776c] italic">
                                             The passage could not be loaded just
                                             now.
@@ -566,7 +519,10 @@ export default function NoteShow({
                                 </div>
                                 <footer className="shrink-0 border-t border-[#e4d8c9] bg-[#faf4ea] px-6 py-5 sm:px-9">
                                     <Link
-                                        href={`/read/${linkedPassage.bookCode}/${linkedPassage.chapter}?from_note=${note.id}#verse-${linkedPassage.verseStart}`}
+                                        href={
+                                            linkedPassage.readerUrl ??
+                                            `/read/${linkedPassage.bookCode}/${linkedPassage.chapter}?from_note=${note.id}#verse-${linkedPassage.verseStart}`
+                                        }
                                         className="inline-flex w-full items-center justify-center gap-3 rounded-xl bg-[#a95624] px-5 py-3.5 font-serif text-base font-semibold text-white shadow-[0_8px_22px_rgba(133,70,31,0.2)] transition hover:bg-[#8f471d] hover:shadow-[0_10px_26px_rgba(133,70,31,0.28)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#7f3e19] sm:w-auto"
                                     >
                                         Open in the full reader

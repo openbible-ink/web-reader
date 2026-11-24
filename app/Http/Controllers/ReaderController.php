@@ -247,6 +247,7 @@ class ReaderController extends Controller
                 : [],
             'highlightLabels' => HighlightLabels::forUser($request->user()),
             'redLetterWords' => $user !== null ? $user->red_letter_words : false,
+            'originalLanguageTools' => $user !== null ? $user->original_language_tools : false,
             'focusedNoteId' => $focusedNoteId,
             'focusedNoteExpanded' => $focusedNoteExpanded,
             'notes' => $request->user()

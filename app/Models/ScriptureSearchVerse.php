@@ -17,11 +17,15 @@ class ScriptureSearchVerse extends Model
         'section_key',
         'section_title',
         'footnote_text',
+        'strong_numbers',
         'text',
     ];
 
     protected function casts(): array
     {
-        return ['canon_position' => 'integer'];
+        return [
+            'canon_position' => 'integer',
+            'strong_numbers' => 'array',
+        ];
     }
 }

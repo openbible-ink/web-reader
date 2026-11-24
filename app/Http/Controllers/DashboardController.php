@@ -64,6 +64,7 @@ class DashboardController extends Controller
                 ?? BibleEdition::query()->where('slug', 'oeb')->value('slug'),
             'highlightLabels' => HighlightLabels::forUser($request->user()),
             'redLetterWords' => (bool) $request->user()->red_letter_words,
+            'originalLanguageTools' => (bool) $request->user()->original_language_tools,
         ]);
     }
 

@@ -3,22 +3,18 @@ import {
     Bell,
     Bookmark,
     BookOpen,
-    CalendarDays,
     ChevronDown,
     ChevronRight,
     FileText,
     Globe2,
     Highlighter,
-    Home,
+    Languages,
     LogOut,
-    Menu,
     Pencil,
     Quote,
     Search,
     Save,
     Settings2,
-    UserRound,
-    X,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAppearance } from '@/hooks/use-appearance';
@@ -26,17 +22,7 @@ import { logout } from '@/routes';
 import { edit as editAppearance } from '@/routes/appearance';
 import { edit as editProfile } from '@/routes/profile';
 import CustomSelect from '@/components/custom-select';
-
-const navigation = [
-    { label: 'Home', icon: Home, href: '/dashboard' },
-    { label: 'Library', icon: BookOpen, href: '/books/JHN' },
-    { label: 'Search', icon: Search, href: '/search' },
-    { label: 'Plans', icon: CalendarDays, href: '#plans' },
-    { label: 'Notes', icon: FileText, href: '/notes' },
-    { label: 'Highlights', icon: Highlighter, href: '/highlights' },
-    { label: 'Bookmarks', icon: Bookmark, href: '/bookmarks' },
-    { label: 'Account', icon: UserRound, href: '#account', active: true },
-];
+import SavedItemsPageShell from '@/components/saved-items-page-shell';
 
 const savedTabs = [
     { label: 'Notes', slug: 'notes', icon: FileText },
@@ -69,6 +55,7 @@ interface DashboardProps {
     defaultEditionSlug: string;
     highlightLabels: Record<DashboardHighlight['color'], string>;
     redLetterWords: boolean;
+    originalLanguageTools: boolean;
 }
 
 interface PaginatedSavedItems {
@@ -146,51 +133,6 @@ function SectionHeading({
     );
 }
 
-function DashboardSidebar({ close }: { close?: () => void }) {
-    return (
-        <div className="flex h-full flex-col bg-[#f8f3ea]/95 px-5 py-7 text-[#22231e]">
-            <Link
-                href="/dashboard"
-                onClick={close}
-                className="mx-auto flex flex-col items-center rounded-lg focus-visible:ring-2 focus-visible:ring-[#9a672d] focus-visible:outline-none"
-            >
-                <img
-                    src="/images/brand/open-bible-mark-dark-128.png"
-                    alt=""
-                    className="h-[72px] w-auto"
-                />
-                <span className="mt-3 text-[10px] font-semibold tracking-[0.36em] uppercase">
-                    Open Bible
-                </span>
-            </Link>
-
-            <div className="my-6 h-px bg-[#dfd7ca]" />
-
-            <nav aria-label="Dashboard navigation" className="grid gap-1.5">
-                {navigation.map(({ label, icon: Icon, href, active }) => (
-                    <a
-                        key={label}
-                        href={href}
-                        onClick={close}
-                        aria-current={active ? 'page' : undefined}
-                        className={`flex items-center gap-4 rounded-xl px-4 py-3 font-serif text-[15px] transition focus-visible:ring-2 focus-visible:ring-[#9a672d] focus-visible:outline-none ${
-                            active
-                                ? 'bg-[#ece3d5] text-[#171813]'
-                                : 'hover:bg-[#f0e9de]'
-                        }`}
-                    >
-                        <Icon
-                            aria-hidden="true"
-                            className="size-[19px] stroke-[1.5]"
-                        />
-                        {label}
-                    </a>
-                ))}
-            </nav>
-        </div>
-    );
-}
-
 export default function Dashboard({
     bookmarkCount,
     highlightCount,
@@ -201,10 +143,10 @@ export default function Dashboard({
     defaultEditionSlug,
     highlightLabels,
     redLetterWords,
+    originalLanguageTools,
 }: DashboardProps) {
     const { auth } = usePage().props;
     const { appearance, resolvedAppearance } = useAppearance();
-    const [mobileNavOpen, setMobileNavOpen] = useState(false);
     const [savedItemsLoading, setSavedItemsLoading] = useState(false);
     const [editableHighlightLabels, setEditableHighlightLabels] =
         useState(highlightLabels);
@@ -212,6 +154,10 @@ export default function Dashboard({
     const [redLetterWordsEnabled, setRedLetterWordsEnabled] =
         useState(redLetterWords);
     const [redLetterWordsSaving, setRedLetterWordsSaving] = useState(false);
+    const [originalLanguageToolsEnabled, setOriginalLanguageToolsEnabled] =
+        useState(originalLanguageTools);
+    const [originalLanguageToolsSaving, setOriginalLanguageToolsSaving] =
+        useState(false);
     const user = auth.user;
     const themeLabel =
         appearance === 'system'
@@ -269,6 +215,23 @@ export default function Dashboard({
         );
     };
 
+    const toggleOriginalLanguageTools = () => {
+        if (originalLanguageToolsSaving) return;
+
+        const enabled = !originalLanguageToolsEnabled;
+        setOriginalLanguageToolsEnabled(enabled);
+        router.patch(
+            '/settings/original-language-tools',
+            { enabled },
+            {
+                preserveScroll: true,
+                onStart: () => setOriginalLanguageToolsSaving(true),
+                onError: () => setOriginalLanguageToolsEnabled(!enabled),
+                onFinish: () => setOriginalLanguageToolsSaving(false),
+            },
+        );
+    };
+
     const loadSavedItems = (tab: SavedTab, page = 1) => {
         if (
             savedItemsLoading ||
@@ -294,36 +257,8 @@ export default function Dashboard({
     return (
         <>
             <Head title="Dashboard" />
-            <div className="min-h-svh bg-[#f2ede4] text-[#20211d]">
-                <aside className="fixed inset-y-0 left-0 z-30 hidden w-[184px] border-r border-[#ddd5c9] lg:block">
-                    <DashboardSidebar />
-                </aside>
-
-                {mobileNavOpen && (
-                    <div className="fixed inset-0 z-50 lg:hidden">
-                        <button
-                            type="button"
-                            className="absolute inset-0 bg-black/30 backdrop-blur-[2px]"
-                            aria-label="Close navigation"
-                            onClick={() => setMobileNavOpen(false)}
-                        />
-                        <aside className="relative h-full w-[min(84vw,320px)] shadow-2xl">
-                            <button
-                                type="button"
-                                onClick={() => setMobileNavOpen(false)}
-                                className="absolute top-4 right-4 z-10 rounded-full p-2 hover:bg-black/5 focus-visible:ring-2 focus-visible:ring-[#9a672d] focus-visible:outline-none"
-                                aria-label="Close navigation"
-                            >
-                                <X className="size-5" />
-                            </button>
-                            <DashboardSidebar
-                                close={() => setMobileNavOpen(false)}
-                            />
-                        </aside>
-                    </div>
-                )}
-
-                <div className="lg:pl-[184px]">
+            <SavedItemsPageShell active="dashboard">
+                <div className="min-h-svh bg-[#f2ede4] text-[#20211d]">
                     <header className="relative min-h-[245px] overflow-hidden border-b border-[#ded6ca] bg-[#faf7f1] px-5 pb-12 sm:px-8 lg:px-12">
                         <div
                             className="absolute inset-y-0 right-0 w-[68%] opacity-90"
@@ -338,15 +273,6 @@ export default function Dashboard({
                         </div>
 
                         <div className="relative flex h-20 items-center justify-between gap-4">
-                            <button
-                                type="button"
-                                onClick={() => setMobileNavOpen(true)}
-                                className="rounded-full border border-[#d9d0c4] bg-[#fffaf2]/85 p-2.5 lg:hidden"
-                                aria-label="Open navigation"
-                            >
-                                <Menu className="size-5" />
-                            </button>
-
                             <form
                                 action="/search"
                                 method="get"
@@ -903,6 +829,38 @@ export default function Dashboard({
                                             />
                                         </button>
                                     </div>
+                                    <div className="flex items-center gap-3 border-t border-[#e1d9ce] py-4">
+                                        <Languages className="size-6 shrink-0 stroke-[1.4] text-[#805a36]" />
+                                        <div className="min-w-0 flex-1 font-serif">
+                                            <p className="text-sm">
+                                                Original-language tools
+                                            </p>
+                                            <p className="mt-0.5 text-xs leading-5 text-[#6f685f]">
+                                                Make words with Hebrew or Greek
+                                                study data interactive.
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            role="switch"
+                                            aria-checked={
+                                                originalLanguageToolsEnabled
+                                            }
+                                            aria-label="Enable original-language word study tools"
+                                            disabled={
+                                                originalLanguageToolsSaving
+                                            }
+                                            onClick={
+                                                toggleOriginalLanguageTools
+                                            }
+                                            className={`relative h-7 w-12 shrink-0 cursor-pointer rounded-full border transition focus-visible:ring-2 focus-visible:ring-[#805a36]/45 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-wait disabled:opacity-60 ${originalLanguageToolsEnabled ? 'border-[#704827] bg-[#805a36]' : 'border-[#c8beb1] bg-[#d8d0c5]'}`}
+                                        >
+                                            <span
+                                                aria-hidden="true"
+                                                className={`absolute top-1/2 left-0.5 size-5 -translate-y-1/2 rounded-full bg-white shadow-sm transition-transform ${originalLanguageToolsEnabled ? 'translate-x-[1.375rem]' : 'translate-x-0'}`}
+                                            />
+                                        </button>
+                                    </div>
                                     <form
                                         className="mt-2 border-t border-[#e1d9ce] pt-5"
                                         onSubmit={(event) => {
@@ -1003,7 +961,7 @@ export default function Dashboard({
                         </div>
                     </main>
                 </div>
-            </div>
+            </SavedItemsPageShell>
         </>
     );
 }

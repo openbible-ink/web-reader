@@ -93,6 +93,33 @@ export interface FootnotePreview {
     position: { top: number; left: number; placement: 'above' | 'below' };
 }
 
+export interface WordStudyEntry {
+    strong: string;
+    language: 'Hebrew' | 'Greek';
+    lemma?: string | null;
+    transliteration?: string | null;
+    pronunciation?: string | null;
+    definition?: string | null;
+    usage?: string | null;
+    derivation?: string | null;
+    occurrenceCount: number;
+    occurrences: Array<{
+        reference: string;
+        text: string;
+        url: string;
+    }>;
+    attribution: string;
+}
+
+export interface WordStudyPreview {
+    strong: string;
+    surface: string;
+    position: { top: number; left: number; placement: 'above' | 'below' };
+    entry?: WordStudyEntry;
+    loading: boolean;
+    error?: string;
+}
+
 export interface TypographyPreferences {
     fontSize: 'small' | 'medium' | 'large';
     lineSpacing: 'compact' | 'comfortable' | 'relaxed';
@@ -135,6 +162,7 @@ export interface ReaderProps {
     }>;
     defaultEditionSlug: string;
     redLetterWords: boolean;
+    originalLanguageTools: boolean;
     comparison?: {
         edition: {
             slug: string;

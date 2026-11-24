@@ -36,3 +36,16 @@ NRSV versification, “Gehenna”, and `ioudaioi`. If a reader changes one of th
 preferences, the web application lazily loads the raw source and parser for that
 chapter view. This compatibility path preserves all existing controls without
 penalising the normal reader bundle.
+
+## Original-language word study
+
+WEB word attributes containing Strong’s identifiers are retained in the chapter
+payloads. `php artisan bible:index-search --edition=webp` also projects the
+identifiers into the verse search index, which powers the occurrence list in the
+reader’s opt-in word-study cards. Run the indexer after importing or updating WEB.
+
+Lexicon definitions are served locally from `resources/bible/strongs/lexicon.json`.
+The data comes from the Open Scriptures Hebrew and Greek Strong’s dictionaries;
+licensing and retrieval details are recorded beside the data in
+`resources/bible/strongs/README.md`. The lexicon is loaded by the server on demand
+and is never included in the reader JavaScript bundle.
