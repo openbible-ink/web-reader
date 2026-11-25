@@ -35,6 +35,7 @@ import {
 import { getBookGradient } from '@/lib/book-gradients';
 import { getCanonicalBookMetadata } from '@/lib/book-metadata';
 import { serialiseStructuredData } from '@/lib/seo';
+import { loadScriptureChapter } from '@/lib/scripture-chapter-cache';
 import type { InlineNode, NoteFieldNode, NoteNode } from 'usfm-parser';
 import { toast } from 'sonner';
 import NoteEditor from '@/components/note-editor';
@@ -134,6 +135,147 @@ function noteBodyText(fields: NoteFieldNode[]): string {
     );
 }
 
+function crossReferenceTargets(
+    note: NoteNode,
+    books: ReaderProps['libraryBooks'],
+    translation: string,
+    fallbackBookCode: string,
+): Array<{
+    label: string;
+    href: string;
+    bookCode: string;
+    chapter: string;
+    verseStart: string;
+    verseEnd?: string;
+}> {
+    if (note.style !== 'x') return [];
+    const raw = noteText(note.children.filter((field) => field.style === 'xt'));
+    let activeBook = books.find((book) => book.code === fallbackBookCode);
+
+    return raw.split(/\s*;\s*/u).flatMap((part) => {
+        const named = part.match(
+            /^(.+?)\s+(\d+):(\d+[a-z]?)(?:[-–](\d+[a-z]?))?$/iu,
+        );
+        const local = part.match(/^(\d+):(\d+[a-z]?)(?:[-–](\d+[a-z]?))?$/iu);
+        if (named) {
+            const normalisedName = named[1]!
+                .toLowerCase()
+                .replace(/[^a-z0-9]/gu, '');
+            activeBook = books.find(
+                (book) =>
+                    book.name.toLowerCase().replace(/[^a-z0-9]/gu, '') ===
+                    normalisedName,
+            );
+        }
+        const match = named ?? local;
+        if (!match || !activeBook) return [];
+        const chapter = named ? named[2]! : match[1]!;
+        const verseStart = named ? named[3]! : match[2]!;
+        const verseEnd = named ? named[4] : match[3];
+        const verses = verseEnd ? `${verseStart}-${verseEnd}` : verseStart;
+
+        return [
+            {
+                label: `${activeBook.name} ${chapter}:${verseStart}${verseEnd ? `–${verseEnd}` : ''}`,
+                href: `/read/${activeBook.code}/${chapter}?translation=${translation}&verses=${verses}`,
+                bookCode: activeBook.code,
+                chapter,
+                verseStart,
+                verseEnd,
+            },
+        ];
+    });
+}
+
+type CrossReferenceTarget = ReturnType<typeof crossReferenceTargets>[number];
+
+function CrossReferenceIcon(): ReactNode {
+    return (
+        <svg
+            aria-hidden="true"
+            viewBox="0 0 16 16"
+            className="size-[0.9em]"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <path d="M5 11 11 5" />
+            <path d="M7.5 5H11v3.5" />
+        </svg>
+    );
+}
+
+function CrossReferenceTargetRow({
+    target,
+    translation,
+}: {
+    target: CrossReferenceTarget;
+    translation: string;
+}): ReactNode {
+    const [preview, setPreview] = useState('Loading passage…');
+
+    useEffect(() => {
+        let active = true;
+        const url = `/api/v1/editions/${encodeURIComponent(translation)}/books/${encodeURIComponent(target.bookCode)}/chapters/${encodeURIComponent(target.chapter)}`;
+        loadScriptureChapter(url)
+            .then(({ document }) => {
+                const verses = readingItems(
+                    chapterContent(document, target.chapter),
+                ).filter(
+                    (item): item is Extract<ReadingItem, { kind: 'verse' }> =>
+                        item.kind === 'verse',
+                );
+                const start = verses.findIndex(
+                    (verse) => verse.number === target.verseStart,
+                );
+                const end = target.verseEnd
+                    ? verses.findIndex(
+                          (verse) => verse.number === target.verseEnd,
+                      )
+                    : start;
+                const selected =
+                    start === -1
+                        ? []
+                        : verses.slice(start, Math.max(start, end) + 1);
+                const words = selected
+                    .map((verse) => inlinePlainText(verse.content))
+                    .join(' ')
+                    .split(/\s+/u)
+                    .filter(Boolean);
+                const excerpt = words.slice(0, 5).join(' ');
+                if (active)
+                    setPreview(
+                        excerpt
+                            ? `${excerpt}${words.length > 5 ? '...' : ''}`
+                            : 'Passage preview unavailable',
+                    );
+            })
+            .catch(() => {
+                if (active) setPreview('Passage preview unavailable');
+            });
+
+        return () => {
+            active = false;
+        };
+    }, [target, translation]);
+
+    return (
+        <div className="flex min-w-0 items-center gap-2.5">
+            <Link
+                href={target.href}
+                className="shrink-0 rounded-full border border-[#d8cab8] bg-[#f6eee2] px-3 py-1.5 font-serif text-sm font-semibold text-[#7b4728] transition hover:border-[#b98555] hover:bg-[#efe0cd] focus-visible:outline-2 focus-visible:outline-[#9a5428]"
+            >
+                {target.label}
+            </Link>
+            <span className="min-w-0 whitespace-nowrap font-serif text-sm text-stone-600">
+                {preview}
+            </span>
+        </div>
+    );
+}
+
 function inlineNotes(nodes: InlineNode[]): NoteNode[] {
     return nodes.flatMap((node) => {
         if (node.type === 'note') return [node];
@@ -199,21 +341,29 @@ function renderInline(
             }
             return <span>{content}</span>;
         }
-        case 'note':
+        case 'note': {
+            const crossReference = node.style === 'x';
             return (
                 <button
                     type="button"
                     data-footnote-trigger
-                    aria-label={`Footnote: ${noteText(node.children)}`}
+                    aria-label={`${crossReference ? 'Cross references' : 'Footnote'}: ${noteText(node.children)}`}
                     aria-haspopup="dialog"
                     onClick={(event) =>
                         onFootnoteClick?.(node, event.currentTarget)
                     }
-                    className="mx-0.5 cursor-pointer rounded-sm align-super font-serif text-[0.78em] leading-none font-black text-[var(--reader-accent)] transition-transform hover:scale-115 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--reader-accent)]"
+                    className="mx-0.5 inline-grid cursor-pointer place-items-center rounded-sm align-super font-serif text-[0.82em] leading-none font-black text-[var(--reader-accent)] transition-transform hover:scale-115 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--reader-accent)]"
                 >
-                    {node.caller === '+' ? '†' : (node.caller ?? '†')}
+                    {crossReference ? (
+                        <CrossReferenceIcon />
+                    ) : node.caller === '+' ? (
+                        '†'
+                    ) : (
+                        (node.caller ?? '†')
+                    )}
                 </button>
             );
+        }
         case 'unknown':
             return node.value ?? null;
     }
@@ -271,6 +421,82 @@ function renderVerseContent(
             {noteBodyText(note.children)}
         </span>
     ));
+}
+
+function verseSegmentClass(style: string, index: number): string {
+    if (/^q(?:1)?$/u.test(style)) return 'block';
+    if (/^(?:q2|qm2)$/u.test(style)) return 'block ps-5 sm:ps-7';
+    if (/^(?:q3|qm3)$/u.test(style)) return 'block ps-10 sm:ps-14';
+    if (/^(?:q4|qm4)$/u.test(style)) return 'block ps-14 sm:ps-20';
+    if (/^li/u.test(style))
+        return 'relative block ps-5 before:absolute before:start-1 before:content-["•"]';
+    if (/^(?:pi\d*|mi)$/u.test(style)) return 'block ps-5 sm:ps-7';
+    if (index > 0 && /^(?:p|m|nb)$/u.test(style)) return 'mt-3 block';
+    return index > 0 ? 'block' : '';
+}
+
+function headingTextClass(
+    heading: Extract<ReadingItem, { kind: 'heading' }>,
+    mutedClass: string,
+): string {
+    if (heading.style === 'd')
+        return `font-serif text-base leading-relaxed italic ${mutedClass}`;
+    if (heading.style === 'sp')
+        return 'font-serif text-sm font-bold tracking-[0.08em] text-[var(--reader-accent)] uppercase';
+    if (isMajorHeading(heading))
+        return 'font-serif text-2xl leading-tight font-semibold tracking-[-0.025em]';
+    return `font-sans text-[0.68rem] font-semibold tracking-[0.29em] uppercase ${mutedClass}`;
+}
+
+function renderStyledSegments(
+    key: string,
+    content: InlineNode[],
+    segments: Array<{ style: string; content: InlineNode[] }>,
+    onFootnoteClick?: (note: NoteNode, trigger: HTMLButtonElement) => void,
+    onStrongWordClick?: (
+        strong: string,
+        surface: string,
+        trigger: HTMLButtonElement,
+    ) => void,
+): ReactNode {
+    const meaningfulSegments = segments.filter(
+        (segment) => segment.content.length > 0,
+    );
+    if (meaningfulSegments.length === 0) {
+        return renderVerseContent(content, onFootnoteClick, onStrongWordClick);
+    }
+
+    return meaningfulSegments.map((segment, index) => (
+        <span
+            key={`${key}-${segment.style}-${index}`}
+            data-usfm-style={segment.style}
+            className={verseSegmentClass(segment.style, index)}
+        >
+            {renderVerseContent(
+                segment.content,
+                onFootnoteClick,
+                onStrongWordClick,
+            )}
+        </span>
+    ));
+}
+
+function renderStyledVerseContent(
+    verse: Extract<ReadingItem, { kind: 'verse' }>,
+    onFootnoteClick?: (note: NoteNode, trigger: HTMLButtonElement) => void,
+    onStrongWordClick?: (
+        strong: string,
+        surface: string,
+        trigger: HTMLButtonElement,
+    ) => void,
+): ReactNode {
+    return renderStyledSegments(
+        verse.key,
+        verse.content,
+        verse.segments,
+        onFootnoteClick,
+        onStrongWordClick,
+    );
 }
 
 export default function Reader({
@@ -3504,11 +3730,17 @@ export default function Reader({
                                                                                     heading.style
                                                                                 }
                                                                                 className={
-                                                                                    isMajorHeading(
-                                                                                        heading,
-                                                                                    )
-                                                                                        ? 'font-serif text-lg leading-tight font-semibold'
-                                                                                        : `font-sans text-[0.68rem] font-semibold tracking-[0.24em] uppercase ${readerMutedText}`
+                                                                                    heading.style ===
+                                                                                    'd'
+                                                                                        ? `font-serif text-sm italic ${readerMutedText}`
+                                                                                        : heading.style ===
+                                                                                            'sp'
+                                                                                          ? 'font-serif text-xs font-bold tracking-[0.08em] text-[var(--reader-accent)] uppercase'
+                                                                                          : isMajorHeading(
+                                                                                                  heading,
+                                                                                              )
+                                                                                            ? 'font-serif text-lg leading-tight font-semibold'
+                                                                                            : `font-sans text-[0.68rem] font-semibold tracking-[0.24em] uppercase ${readerMutedText}`
                                                                                 }
                                                                             >
                                                                                 {renderInlineSequence(
@@ -3553,10 +3785,8 @@ export default function Reader({
                                                                         }
                                                                     >
                                                                         {row.primary
-                                                                            ? renderVerseContent(
-                                                                                  row
-                                                                                      .primary
-                                                                                      .content,
+                                                                            ? renderStyledVerseContent(
+                                                                                  row.primary,
                                                                                   openFootnote,
                                                                                   originalLanguageTools &&
                                                                                       edition.slug ===
@@ -3593,7 +3823,7 @@ export default function Reader({
                                                                             data-heading-style={
                                                                                 heading.style
                                                                             }
-                                                                            className={`ml-[1.625rem] ${isMajorHeading(heading) ? 'mt-1 mb-2 font-serif text-lg leading-tight font-semibold' : `mb-4 font-sans text-[0.68rem] font-semibold tracking-[0.24em] uppercase ${readerMutedText}`}`}
+                                                                            className={`ml-[1.625rem] ${heading.style === 'd' ? `mb-4 font-serif text-sm italic ${readerMutedText}` : heading.style === 'sp' ? 'mb-3 font-serif text-xs font-bold tracking-[0.08em] text-[var(--reader-accent)] uppercase' : isMajorHeading(heading) ? 'mt-1 mb-2 font-serif text-lg leading-tight font-semibold' : `mb-4 font-sans text-[0.68rem] font-semibold tracking-[0.24em] uppercase ${readerMutedText}`}`}
                                                                         >
                                                                             {renderInlineSequence(
                                                                                 heading.content,
@@ -3621,10 +3851,8 @@ export default function Reader({
                                                                         }
                                                                     >
                                                                         {row.secondary
-                                                                            ? renderVerseContent(
-                                                                                  row
-                                                                                      .secondary
-                                                                                      .content,
+                                                                            ? renderStyledVerseContent(
+                                                                                  row.secondary,
                                                                                   openFootnote,
                                                                                   originalLanguageTools &&
                                                                                       comparison
@@ -3671,11 +3899,7 @@ export default function Reader({
                                             className={`group/section grid scroll-mt-[6.5rem] grid-cols-[4.5rem_1.5rem_minmax(0,1fr)_2.75rem] items-center gap-x-2 ${readingHeadingLayoutClass(content, index, readerSectionDivider)} ${isMajorHeading(item) ? 'mb-2' : 'mb-4'}`}
                                         >
                                             <h2
-                                                className={
-                                                    isMajorHeading(item)
-                                                        ? 'col-start-3 font-serif text-2xl leading-tight font-semibold tracking-[-0.025em]'
-                                                        : `col-start-3 font-sans text-[0.68rem] font-semibold tracking-[0.29em] uppercase ${readerMutedText}`
-                                                }
+                                                className={`col-start-3 ${headingTextClass(item, readerMutedText)}`}
                                             >
                                                 {renderInlineSequence(
                                                     item.content,
@@ -3698,6 +3922,24 @@ export default function Reader({
                                                 />
                                             )}
                                         </div>
+                                    ) : item.kind === 'continuation' ? (
+                                        <div
+                                            key={item.key}
+                                            className="grid grid-cols-[4.5rem_1.5rem_minmax(0,1fr)_2.75rem] gap-x-2 py-1.5"
+                                        >
+                                            <div className="col-start-3">
+                                                {renderStyledSegments(
+                                                    item.key,
+                                                    item.content,
+                                                    item.segments,
+                                                    openFootnote,
+                                                    originalLanguageTools &&
+                                                        edition.slug === 'webp'
+                                                        ? openWordStudy
+                                                        : undefined,
+                                                )}
+                                            </div>
+                                        </div>
                                     ) : (
                                         <Fragment key={item.key}>
                                             {(item.number === '1' ||
@@ -3716,7 +3958,7 @@ export default function Reader({
                                             )}
                                             <div
                                                 id={`verse-${item.number}`}
-                                                className="group/verse grid scroll-mt-[6.5rem] grid-cols-[4.5rem_1.5rem_minmax(0,1fr)_2.75rem] items-start gap-x-2 py-1.5"
+                                                className={`group/verse grid scroll-mt-[6.5rem] grid-cols-[4.5rem_1.5rem_minmax(0,1fr)_2.75rem] items-start gap-x-2 py-1.5 ${item.breakBefore ? 'mt-5' : ''}`}
                                             >
                                                 <span aria-hidden="true" />
                                                 <span
@@ -3729,8 +3971,8 @@ export default function Reader({
                                                         item.number
                                                     }
                                                 >
-                                                    {renderVerseContent(
-                                                        item.content,
+                                                    {renderStyledVerseContent(
+                                                        item,
                                                         openFootnote,
                                                         originalLanguageTools &&
                                                             edition.slug ===
@@ -4513,7 +4755,11 @@ export default function Reader({
                     <div
                         ref={footnoteRef}
                         role="dialog"
-                        aria-label="Footnote"
+                        aria-label={
+                            footnotePreview.note.style === 'x'
+                                ? 'Cross references'
+                                : 'Footnote'
+                        }
                         className={`fixed z-[72] w-[min(22rem,calc(100vw-2rem))] -translate-x-1/2 rounded-2xl border border-stone-200 bg-[#fffdf9] p-4 text-stone-800 shadow-[0_14px_40px_rgba(41,37,36,0.24)] ${footnotePreview.position.placement === 'above' ? '-translate-y-full' : ''}`}
                         style={{
                             top: footnotePreview.position.top,
@@ -4523,7 +4769,9 @@ export default function Reader({
                         <div className="flex items-start justify-between gap-4">
                             <div>
                                 <p className="font-sans text-[0.62rem] font-semibold tracking-[0.18em] text-[#9a5428] uppercase">
-                                    Footnote
+                                    {footnotePreview.note.style === 'x'
+                                        ? 'Cross references'
+                                        : 'Footnote'}
                                 </p>
                                 <p className="mt-1 font-sans text-xs text-stone-500">
                                     {noteText(
@@ -4542,9 +4790,39 @@ export default function Reader({
                                 <X className="size-4" />
                             </button>
                         </div>
-                        <p className="mt-3 font-serif text-base leading-6 text-stone-800">
-                            {noteBodyText(footnotePreview.note.children)}
-                        </p>
+                        {footnotePreview.note.style === 'x' ? (
+                            <div className="mt-3 grid gap-2.5">
+                                {crossReferenceTargets(
+                                    footnotePreview.note,
+                                    libraryBooks,
+                                    edition.slug,
+                                    book.code,
+                                ).length > 0 ? (
+                                    crossReferenceTargets(
+                                        footnotePreview.note,
+                                        libraryBooks,
+                                        edition.slug,
+                                        book.code,
+                                    ).map((target) => (
+                                        <CrossReferenceTargetRow
+                                            key={target.href}
+                                            target={target}
+                                            translation={edition.slug}
+                                        />
+                                    ))
+                                ) : (
+                                    <p className="font-serif text-base leading-6 text-stone-800">
+                                        {noteBodyText(
+                                            footnotePreview.note.children,
+                                        )}
+                                    </p>
+                                )}
+                            </div>
+                        ) : (
+                            <p className="mt-3 font-serif text-base leading-6 text-stone-800">
+                                {noteBodyText(footnotePreview.note.children)}
+                            </p>
+                        )}
                     </div>
                 )}
             </div>

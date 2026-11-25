@@ -78,6 +78,9 @@ class IndexScriptureSearch extends Command
                         'strong_numbers' => isset($verse['strongNumbers'])
                             ? json_encode($verse['strongNumbers'], JSON_THROW_ON_ERROR)
                             : null,
+                        'strong_terms' => isset($verse['strongTerms'])
+                            ? json_encode($verse['strongTerms'], JSON_THROW_ON_ERROR)
+                            : null,
                         'text' => $verse['text'],
                         'created_at' => $now,
                         'updated_at' => $now,

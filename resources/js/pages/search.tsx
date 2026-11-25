@@ -27,7 +27,7 @@ type Book = {
     category: string;
 };
 type SearchScope = 'verse' | 'headings' | 'footnotes' | 'notes';
-type FilterKind = 'in' | 'book' | 'testament' | 'category';
+type FilterKind = 'in' | 'book' | 'testament' | 'category' | 'strong';
 type SearchFilter = {
     kind: FilterKind;
     value: string;
@@ -49,6 +49,7 @@ type SearchResult = {
     sectionTitle: string | null;
     footnoteText: string | null;
     matchedIn: SearchScope[];
+    strongMatches?: string[];
     text: string;
     tags?: Array<{ id: string; name: string; slug: string }>;
     url: string;
@@ -347,10 +348,12 @@ function Highlighted({
     text,
     query,
     regex = false,
+    explicitTerms = [],
 }: {
     text: string;
     query: string;
     regex?: boolean;
+    explicitTerms?: string[];
 }) {
     if (regex && query.startsWith('/') && query.endsWith('/')) {
         const source = query.slice(1, -1);
@@ -400,9 +403,12 @@ function Highlighted({
         }
     }
 
-    const terms = [...query.trim().matchAll(/["“]([^"”]+)["”]|([^\s]+)/gu)]
-        .map((match) => (match[1] || match[2] || '').trim())
-        .filter((term) => term.length > 1);
+    const terms = [
+        ...explicitTerms,
+        ...[...query.trim().matchAll(/["“]([^"”]+)["”]|([^\s]+)/gu)].map(
+            (match) => (match[1] || match[2] || '').trim(),
+        ),
+    ].filter((term) => term.length > 0);
     if (!terms.length) return text;
     const expression = new RegExp(
         `(${terms.map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`,
@@ -544,22 +550,50 @@ export default function Search({
         })),
     ];
     const filterMatch = search.match(
-        /(?:^|\s)(in|book|testament|category):([^\s]*)$/i,
+        /(?:^|\s)(in|book|testament|category|strong):([^\s]*)$/i,
     );
     const filterKind = filterMatch?.[1].toLowerCase() as FilterKind | undefined;
     const filterFragment = filterMatch?.[2].toLowerCase();
-    const visibleFilterOptions = allFilterOptions.filter(
-        (option) =>
-            option.kind === filterKind &&
-            (filterFragment === undefined ||
-                option.value.startsWith(filterFragment) ||
-                option.label.toLowerCase().startsWith(filterFragment)),
-    );
+    const strongFilterOption: FilterOption | undefined =
+        filterKind === 'strong' &&
+        filterFragment !== undefined &&
+        /^[gh]\d{1,5}$/i.test(filterFragment)
+            ? {
+                  kind: 'strong',
+                  value: filterFragment.toUpperCase(),
+                  label: filterFragment.toUpperCase(),
+                  description: `Find verses tagged ${filterFragment.toUpperCase()}`,
+              }
+            : undefined;
+    const visibleFilterOptions =
+        filterKind === 'strong'
+            ? strongFilterOption
+                ? [strongFilterOption]
+                : []
+            : allFilterOptions.filter(
+                  (option) =>
+                      option.kind === filterKind &&
+                      (filterFragment === undefined ||
+                          option.value.startsWith(filterFragment) ||
+                          option.label
+                              .toLowerCase()
+                              .startsWith(filterFragment)),
+              );
     const optionFromToken = (
         kind: FilterKind,
         rawValue: string,
     ): FilterOption | undefined => {
         const value = rawValue.toLowerCase();
+        if (kind === 'strong') {
+            return /^[gh]\d{1,5}$/i.test(value)
+                ? {
+                      kind,
+                      value: value.toUpperCase(),
+                      label: value.toUpperCase(),
+                      description: `Find verses tagged ${value.toUpperCase()}`,
+                  }
+                : undefined;
+        }
         if (kind === 'in') {
             const canonical = ['heading', 'section', 'sections'].includes(value)
                 ? 'headings'
@@ -610,14 +644,18 @@ export default function Search({
 
     const chooseFilter = (filter: SearchFilter) => {
         const match = search.match(
-            /(?:^|\s)(?:in|book|testament|category):[^\s]*$/i,
+            /(?:^|\s)(?:in|book|testament|category|strong):[^\s]*$/i,
         );
         const prefix = match
             ? search.slice(0, match.index).trimEnd()
             : search.trimEnd();
-        setSearch(prefix);
+        setSearch(filter.kind === 'strong' ? '' : prefix);
         setActiveFilters((current) => [
-            ...current.filter((item) => item.kind !== filter.kind),
+            ...current.filter(
+                (item) =>
+                    item.kind !== filter.kind &&
+                    (filter.kind !== 'strong' || item.kind !== 'in'),
+            ),
             filter,
         ]);
         if (filter.kind === 'book') setBook(filter.bookCode ?? '');
@@ -795,7 +833,7 @@ export default function Search({
                                             const value = event.target.value;
                                             const completedTokens = [
                                                 ...value.matchAll(
-                                                    /(?:^|\s)(in|book|testament|category):([^\s]+)(?=\s|$)/gi,
+                                                    /(?:^|\s)(in|book|testament|category|strong):([^\s]+)(?=\s)/gi,
                                                 ),
                                             ]
                                                 .map((match) => ({
@@ -819,22 +857,37 @@ export default function Search({
                                                 completedTokens.map(
                                                     (item) => item.option,
                                                 );
+                                            const completedStrong =
+                                                completed.some(
+                                                    (option) =>
+                                                        option.kind ===
+                                                        'strong',
+                                                );
                                             const remainingText =
-                                                completedTokens
-                                                    .reduce(
-                                                        (text, item) =>
-                                                            text.replace(
-                                                                item.match,
-                                                                ' ',
-                                                            ),
-                                                        value,
-                                                    )
-                                                    .replace(/\s+/g, ' ')
-                                                    .trimStart();
+                                                completedStrong
+                                                    ? ''
+                                                    : completedTokens
+                                                          .reduce(
+                                                              (text, item) =>
+                                                                  text.replace(
+                                                                      item.match,
+                                                                      ' ',
+                                                                  ),
+                                                              value,
+                                                          )
+                                                          .replace(/\s+/g, ' ')
+                                                          .trimStart();
                                             setSearch(remainingText);
                                             if (completed.length > 0)
                                                 setActiveFilters((current) => [
-                                                    ...current,
+                                                    ...current.filter(
+                                                        (item) =>
+                                                            !completedStrong ||
+                                                            (item.kind !==
+                                                                'strong' &&
+                                                                item.kind !==
+                                                                    'in'),
+                                                    ),
                                                     ...completed.filter(
                                                         (option) =>
                                                             !current.some(
@@ -846,9 +899,23 @@ export default function Search({
                                                             ),
                                                     ),
                                                 ]);
+                                            if (
+                                                !completedStrong &&
+                                                value.trim() !== '' &&
+                                                !/(?:^|\s)strong:[^\s]*$/i.test(
+                                                    value,
+                                                )
+                                            )
+                                                setActiveFilters((current) =>
+                                                    current.filter(
+                                                        (item) =>
+                                                            item.kind !==
+                                                            'strong',
+                                                    ),
+                                                );
                                             setFilterMenuOpen(
                                                 completed.length === 0 &&
-                                                    /(?:^|\s)(?:in|book|testament|category):[^\s]*$/i.test(
+                                                    /(?:^|\s)(?:in|book|testament|category|strong):[^\s]*$/i.test(
                                                         value,
                                                     ),
                                             );
@@ -857,7 +924,7 @@ export default function Search({
                                         onKeyDown={handleSearchKeyDown}
                                         onFocus={() =>
                                             setFilterMenuOpen(
-                                                /(?:^|\s)(?:in|book|testament|category):[^\s]*$/i.test(
+                                                /(?:^|\s)(?:in|book|testament|category|strong):[^\s]*$/i.test(
                                                     search,
                                                 ),
                                             )
@@ -1370,6 +1437,9 @@ export default function Search({
                                                             text={result.text}
                                                             query={searchText}
                                                             regex={isRegex}
+                                                            explicitTerms={
+                                                                result.strongMatches
+                                                            }
                                                         />
                                                     </p>
                                                     {result.footnoteText &&

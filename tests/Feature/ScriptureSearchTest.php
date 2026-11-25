@@ -32,12 +32,16 @@ class ScriptureSearchTest extends TestCase
             'book_code' => 'JHN', 'book_name' => 'John', 'canon_position' => 43,
             'chapter' => '8', 'verse' => '12', 'section_key' => 'light-section', 'section_title' => 'A revealing illumination',
             'footnote_text' => 'Some ancient manuscripts omit this phrase.',
+            'strong_numbers' => ['G5457', 'G2889'],
+            'strong_terms' => ['G5457' => ['light'], 'G2889' => ['world']],
             'text' => 'I am the light of the world. Whoever follows me will not walk in darkness.',
         ]);
         ScriptureSearchVerse::query()->create([
             'edition_id' => $edition->id, 'bible_book_id' => $book->id,
             'book_code' => 'JHN', 'book_name' => 'John', 'canon_position' => 43,
             'chapter' => '8', 'verse' => '13', 'section_key' => 'light-section', 'section_title' => 'A revealing illumination',
+            'strong_numbers' => ['G5457'],
+            'strong_terms' => ['G5457' => ['testimony']],
             'text' => 'The Pharisees challenged his testimony.',
         ]);
 
@@ -276,6 +280,33 @@ class ScriptureSearchTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('results.total', 1)
                 ->where('results.data.0.bookCode', 'JHN'));
+    }
+
+    public function test_it_filters_indexed_verses_by_strongs_number(): void
+    {
+        $this->catalogue();
+
+        $this->get('/search?q=strong%3Ag5457')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('searchText', '')
+                ->where('searchFilters.0.kind', 'strong')
+                ->where('searchFilters.0.value', 'G5457')
+                ->where('searchFilters.0.label', 'G5457')
+                ->where('results.total', 2)
+                ->where('results.data.0.matchedIn.0', 'verse')
+                ->where('results.data.0.strongMatches.0', 'light')
+                ->where('distribution.total', 2)
+                ->where('distribution.books.0.count', 2));
+
+        $this->get('/search?q=world+strong%3AG5457+book%3Ajohn')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('searchText', '')
+                ->where('searchFilters.0.kind', 'strong')
+                ->where('searchFilters.1.kind', 'book')
+                ->where('results.total', 2)
+                ->where('results.data.0.verse', '12'));
     }
 
     public function test_it_supports_regular_expression_searches_and_exact_word_patterns(): void

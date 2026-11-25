@@ -42,6 +42,11 @@ class SearchController extends Controller
         $testaments = collect($searchFilters)->where('kind', 'testament')->pluck('value')->unique()->values();
         $categoryBookCodes = collect($searchFilters)->where('kind', 'category')
             ->flatMap(fn (array $filter) => CanonicalBookMetadata::bookCodesForCategory($filter['label']))->unique()->values();
+        $strongNumbers = collect($searchFilters)->where('kind', 'strong')->pluck('value')->unique()->values();
+        if ($strongNumbers->isNotEmpty()) {
+            $searchText = '';
+            $searchScopes = ['verse'];
+        }
         $reference = $searchText !== '' ? $this->reference($searchText, $edition) : null;
         $results = null;
         $distribution = null;
@@ -56,7 +61,7 @@ class SearchController extends Controller
 
             $results = in_array('notes', $searchScopes, true)
                 ? $this->noteSearchResults($request, $effectiveBookCodes, $testaments, $categoryBookCodes, $terms, $regex, $databaseRegex, $regexWordAnchored)
-                : (in_array('headings', $searchScopes, true) || $regex !== null
+                : ($strongNumbers->isEmpty() && (in_array('headings', $searchScopes, true) || $regex !== null)
                 ? $this->aggregatedSearchResults($request, $edition, $effectiveBookCodes, $testaments, $categoryBookCodes, $searchText, $terms, $searchScopes, $regex, $databaseRegex, $regexWordAnchored)
                 : ScriptureSearchVerse::query()
                     ->where('edition_id', $edition->id)
@@ -70,6 +75,7 @@ class SearchController extends Controller
                         }
                     }))
                     ->when($categoryBookCodes->isNotEmpty(), fn (Builder $builder) => $builder->whereIn('book_code', $categoryBookCodes))
+                    ->when($strongNumbers->isNotEmpty(), fn (Builder $builder) => $this->applyStrongFilters($builder, $strongNumbers))
                     ->when($terms->isNotEmpty(), fn (Builder $builder) => $this->applyScriptureTextSearch($builder, $columns, $terms))
                     ->when($terms->isEmpty(), function (Builder $builder) use ($columns): void {
                         $builder->where(function (Builder $match) use ($columns): void {
@@ -97,14 +103,19 @@ class SearchController extends Controller
                         'verse' => $verse->verse,
                         'sectionTitle' => $verse->section_title,
                         'footnoteText' => $verse->footnote_text,
-                        'matchedIn' => collect([
-                            'verse' => $verse->text,
-                            'headings' => $verse->section_title,
-                            'footnotes' => $verse->footnote_text,
-                        ])->filter(fn (?string $value, string $scope) => in_array($scope, $searchScopes, true)
+                        'strongMatches' => $strongNumbers
+                            ->flatMap(fn (string $strong) => $verse->strong_terms[$strong] ?? [])
+                            ->filter()->unique()->values()->all(),
+                        'matchedIn' => $strongNumbers->isNotEmpty() && $terms->isEmpty()
+                            ? ['verse']
+                            : collect([
+                                'verse' => $verse->text,
+                                'headings' => $verse->section_title,
+                                'footnotes' => $verse->footnote_text,
+                            ])->filter(fn (?string $value, string $scope) => in_array($scope, $searchScopes, true)
                             && $value !== null
                             && ($terms->isEmpty() || $terms->contains(fn (string $term) => str_contains(Str::lower($value), $term))))
-                            ->keys()->values()->all(),
+                                ->keys()->values()->all(),
                         'text' => $verse->text,
                         'url' => route('reader.show', [
                             'book' => $verse->book_code,
@@ -126,6 +137,7 @@ class SearchController extends Controller
                     $regex,
                     $databaseRegex,
                     $regexWordAnchored,
+                    $strongNumbers,
                 );
             }
         }
@@ -177,7 +189,7 @@ class SearchController extends Controller
      * @param  array<int, string>  $searchScopes
      * @return array{books: array<int, array{code: string, name: string, testament: string, category: string, count: int}>, testaments: array<int, array{key: string, name: string, count: int}>, total: int}
      */
-    private function searchDistribution(BibleEdition $edition, Collection $books, Collection $bookCodes, Collection $testaments, Collection $categoryBookCodes, Collection $terms, string $searchText, array $searchScopes, ?string $regex, ?string $databaseRegex, bool $regexWordAnchored): array
+    private function searchDistribution(BibleEdition $edition, Collection $books, Collection $bookCodes, Collection $testaments, Collection $categoryBookCodes, Collection $terms, string $searchText, array $searchScopes, ?string $regex, ?string $databaseRegex, bool $regexWordAnchored, Collection $strongNumbers): array
     {
         if ($regex === null) {
             $indexVersion = Cache::get(
@@ -193,6 +205,7 @@ class SearchController extends Controller
                 $categoryBookCodes->all(),
                 $searchText,
                 $searchScopes,
+                $strongNumbers->all(),
             ], JSON_THROW_ON_ERROR));
 
             return Cache::remember(
@@ -206,6 +219,7 @@ class SearchController extends Controller
                     $categoryBookCodes,
                     $terms,
                     $searchScopes,
+                    $strongNumbers,
                 ),
             );
         }
@@ -222,6 +236,7 @@ class SearchController extends Controller
                 }
             }))
             ->when($categoryBookCodes->isNotEmpty(), fn (Builder $builder) => $builder->whereIn('book_code', $categoryBookCodes))
+            ->when($strongNumbers->isNotEmpty(), fn (Builder $builder) => $this->applyStrongFilters($builder, $strongNumbers))
             ->when(
                 DB::getDriverName() === 'pgsql' && $databaseRegex !== null,
                 fn (Builder $builder) => $this->applyScriptureRegexSearch($builder, $searchScopes, $databaseRegex),
@@ -301,7 +316,7 @@ class SearchController extends Controller
      * @param  array<int, string>  $searchScopes
      * @return array{books: array<int, array{code: string, name: string, testament: string, category: string, count: int}>, testaments: array<int, array{key: string, name: string, count: int}>, total: int}
      */
-    private function databaseSearchDistribution(BibleEdition $edition, Collection $books, Collection $bookCodes, Collection $testaments, Collection $categoryBookCodes, Collection $terms, array $searchScopes): array
+    private function databaseSearchDistribution(BibleEdition $edition, Collection $books, Collection $bookCodes, Collection $testaments, Collection $categoryBookCodes, Collection $terms, array $searchScopes, Collection $strongNumbers): array
     {
         $columns = collect($searchScopes)->map(fn (string $scope) => match ($scope) {
             'headings' => 'section_title',
@@ -320,6 +335,17 @@ class SearchController extends Controller
                 }
             }))
             ->when($categoryBookCodes->isNotEmpty(), fn (Builder $builder) => $builder->whereIn('book_code', $categoryBookCodes));
+        $this->applyStrongFilters($base, $strongNumbers);
+
+        if ($terms->isEmpty() && $strongNumbers->isNotEmpty()) {
+            $counts = (clone $base)
+                ->select('book_code')
+                ->selectRaw('count(*) as match_count')
+                ->groupBy('book_code')
+                ->pluck('match_count', 'book_code');
+
+            return $this->distributionFromCounts($books, $edition, $counts);
+        }
 
         $this->applyScriptureTextSearch($base, $columns, $terms);
         $counts = collect();
@@ -379,6 +405,43 @@ class SearchController extends Controller
             ],
             'total' => (int) $bookDistribution->sum('count'),
         ];
+    }
+
+    /**
+     * @param  Collection<int, BibleBook>  $books
+     * @param  Collection<string, int|string>  $counts
+     * @return array{books: array<int, array{code: string, name: string, testament: string, category: string, count: int, wordCount: int}>, testaments: array<int, array{key: string, name: string, count: int, wordCount: int}>, total: int}
+     */
+    private function distributionFromCounts(Collection $books, BibleEdition $edition, Collection $counts): array
+    {
+        $wordCounts = $this->bookWordCounts($edition);
+        $bookDistribution = $books->map(function (BibleBook $book) use ($counts, $wordCounts): array {
+            return [
+                'code' => $book->book_code,
+                'name' => $book->name,
+                'testament' => ($book->canon_position ?? 40) <= 39 ? 'old' : 'new',
+                'category' => CanonicalBookMetadata::category($book->book_code),
+                'count' => (int) $counts->get($book->book_code, 0),
+                'wordCount' => (int) $wordCounts->get($book->book_code, 0),
+            ];
+        })->values();
+
+        return [
+            'books' => $bookDistribution->all(),
+            'testaments' => [
+                $this->testamentDistribution('old', 'Old Testament', $bookDistribution->where('testament', 'old')),
+                $this->testamentDistribution('new', 'New Testament', $bookDistribution->where('testament', 'new')),
+            ],
+            'total' => (int) $bookDistribution->sum('count'),
+        ];
+    }
+
+    /** @param Collection<int, string> $strongNumbers */
+    private function applyStrongFilters(Builder $builder, Collection $strongNumbers): void
+    {
+        foreach ($strongNumbers as $strong) {
+            $builder->whereJsonContains('strong_numbers', $strong);
+        }
     }
 
     /** @return Collection<string, int> */
@@ -449,9 +512,18 @@ class SearchController extends Controller
         }
 
         $remaining = preg_replace('/(?:^|\s)in:(?:verse(?:-?text)?|headings?|sections?|footnotes?|notes?)(?=\s|$)/iu', ' ', $query) ?? $query;
-        $remaining = preg_replace_callback('/(?:^|\s)(book|testament|category):([^\s]+)(?=\s|$)/iu', function (array $match) use ($books, $filters): string {
+        $remaining = preg_replace_callback('/(?:^|\s)(book|testament|category|strong):([^\s]+)(?=\s|$)/iu', function (array $match) use ($books, $filters): string {
             $kind = Str::lower($match[1]);
             $value = Str::lower($match[2]);
+            if ($kind === 'strong') {
+                $strong = strtoupper($value);
+                if (preg_match('/^[GH][0-9]{1,5}$/', $strong) !== 1) {
+                    return $match[0];
+                }
+                $filters->push(['kind' => 'strong', 'value' => $strong, 'label' => $strong]);
+
+                return ' ';
+            }
             if ($kind === 'book') {
                 $needle = Str::of($value)->replace('-', '')->replaceMatches('/[^a-z0-9]+/u', '')->toString();
                 $book = $books->first(fn (BibleBook $book) => collect([$book->book_code, $book->name, $book->long_name])

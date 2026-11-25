@@ -18,6 +18,7 @@ class ScriptureSearchVerse extends Model
         'section_title',
         'footnote_text',
         'strong_numbers',
+        'strong_terms',
         'text',
     ];
 
@@ -26,6 +27,7 @@ class ScriptureSearchVerse extends Model
         return [
             'canon_position' => 'integer',
             'strong_numbers' => 'array',
+            'strong_terms' => 'array',
         ];
     }
 }

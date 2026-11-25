@@ -2,7 +2,21 @@ import type { BibleDocument, FlowNode, InlineNode } from 'usfm-parser';
 
 export type ReadingItem =
     | { key: string; kind: 'heading'; style: string; content: InlineNode[] }
-    | { key: string; kind: 'verse'; number: string; content: InlineNode[] };
+    | {
+          key: string;
+          kind: 'continuation';
+          number?: string;
+          content: InlineNode[];
+          segments: Array<{ style: string; content: InlineNode[] }>;
+      }
+    | {
+          key: string;
+          kind: 'verse';
+          number: string;
+          content: InlineNode[];
+          segments: Array<{ style: string; content: InlineNode[] }>;
+          breakBefore?: boolean;
+      };
 
 export interface OutlineItem {
     key: string;
@@ -59,6 +73,11 @@ export function readingHeadingLayoutClass(
     index: number,
     dividerClass: string,
 ): string {
+    const heading = items[index];
+    if (heading?.kind === 'heading' && heading.style === 'd')
+        return 'mt-4 mb-5';
+    if (heading?.kind === 'heading' && heading.style === 'sp')
+        return 'mt-7 mb-2';
     if (index === 0) return '';
     if (items[index - 1]?.kind === 'heading') return 'mt-3';
 
@@ -100,18 +119,34 @@ export function chapterContent(
 
 export function readingItems(nodes: FlowNode[]): ReadingItem[] {
     const items: ReadingItem[] = [];
-    let verse: { key: string; number: string; content: InlineNode[] } | null =
-        null;
+    let verse: Extract<ReadingItem, { kind: 'verse' }> | null = null;
+    let lastVerseNumber: string | undefined;
+    let pendingBreak = false;
     const flushVerse = () => {
-        if (verse) items.push({ ...verse, kind: 'verse' });
+        if (verse) items.push(verse);
         verse = null;
     };
-    const consumeInline = (node: InlineNode) => {
+    const consumeInline = (node: InlineNode, style = 'p') => {
         if (node.type === 'verseStart') {
             flushVerse();
-            verse = { key: node.id, number: node.number, content: [] };
+            lastVerseNumber = node.number;
+            verse = {
+                key: node.id,
+                kind: 'verse',
+                number: node.number,
+                content: [],
+                segments: [{ style, content: [] }],
+                breakBefore: pendingBreak,
+            };
+            pendingBreak = false;
         } else if (verse) {
             verse.content.push(node);
+            let segment = verse.segments.at(-1);
+            if (!segment || segment.style !== style) {
+                segment = { style, content: [] };
+                verse.segments.push(segment);
+            }
+            segment.content.push(node);
         }
     };
 
@@ -123,7 +158,12 @@ export function readingItems(nodes: FlowNode[]): ReadingItem[] {
             continue;
         }
 
-        if (node.style.startsWith('s') || node.style.startsWith('ms')) {
+        if (
+            node.style.startsWith('s') ||
+            node.style.startsWith('ms') ||
+            node.style === 'd' ||
+            node.style === 'sp'
+        ) {
             flushVerse();
             items.push({
                 key: node.id,
@@ -133,7 +173,24 @@ export function readingItems(nodes: FlowNode[]): ReadingItem[] {
             });
             continue;
         }
-        node.children.forEach(consumeInline);
+        if (node.style === 'b') {
+            pendingBreak = true;
+            continue;
+        }
+        const startsVerse = node.children.some(
+            (child) => child.type === 'verseStart',
+        );
+        if (!verse && !startsVerse && node.children.length > 0) {
+            items.push({
+                key: node.id,
+                kind: 'continuation',
+                number: lastVerseNumber,
+                content: node.children,
+                segments: [{ style: node.style, content: node.children }],
+            });
+            continue;
+        }
+        node.children.forEach((child) => consumeInline(child, node.style));
     }
     flushVerse();
 
@@ -179,7 +236,12 @@ export function focusedReadingItems(
             return;
         }
 
-        if (!selectedVerses.has(item.number)) return;
+        if (
+            item.kind === 'continuation' &&
+            (!item.number || !selectedVerses.has(item.number))
+        )
+            return;
+        if (item.kind === 'verse' && !selectedVerses.has(item.number)) return;
 
         const currentHeadings = [
             currentMajorHeading,
@@ -204,7 +266,11 @@ export function chapterOutline(items: ReadingItem[]): OutlineItem[] {
     const slugs = new Map<string, number>();
 
     return items.flatMap((item, index) => {
-        if (item.kind !== 'heading') return [];
+        if (
+            item.kind !== 'heading' ||
+            (!item.style.startsWith('s') && !item.style.startsWith('ms'))
+        )
+            return [];
 
         const title = inlinePlainText(item.content);
         const baseSlug =
@@ -225,7 +291,7 @@ export function chapterOutline(items: ReadingItem[]): OutlineItem[] {
             ) {
                 break;
             }
-            if (following.kind === 'heading') continue;
+            if (following.kind !== 'verse') continue;
             verses.push(following.number);
         }
 
@@ -261,6 +327,7 @@ export function comparisonRows(
                 headings = [...headings, item];
                 return;
             }
+            if (item.kind === 'continuation') return;
             verses.set(item.number, { verse: item, headings });
             headings = [];
         });

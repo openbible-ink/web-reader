@@ -45,6 +45,12 @@ function extractVerses(document) {
         current.footnoteText =
             current.footnoteText.replace(/\s+/gu, ' ').trim() || null;
         current.strongNumbers = [...current.strongNumbers];
+        current.strongTerms = Object.fromEntries(
+            [...current.strongTerms.entries()].map(([strong, terms]) => [
+                strong,
+                [...terms],
+            ]),
+        );
         if (current.text) {
             const key = `${current.chapter}:${current.verse}`;
             const existing = verseByReference.get(key);
@@ -67,6 +73,15 @@ function extractVerses(document) {
                 for (const strong of current.strongNumbers) {
                     if (!existing.strongNumbers.includes(strong))
                         existing.strongNumbers.push(strong);
+                }
+                for (const [strong, terms] of Object.entries(
+                    current.strongTerms,
+                )) {
+                    existing.strongTerms[strong] ??= [];
+                    for (const term of terms) {
+                        if (!existing.strongTerms[strong].includes(term))
+                            existing.strongTerms[strong].push(term);
+                    }
                 }
             } else {
                 verseByReference.set(key, current);
@@ -101,6 +116,7 @@ function extractVerses(document) {
                 sectionTitle,
                 footnoteText: '',
                 strongNumbers: new Set(),
+                strongTerms: new Map(),
                 text: '',
             };
             return;
@@ -114,10 +130,19 @@ function extractVerses(document) {
             (node.style === 'w' || node.style === '+w') &&
             current
         ) {
+            const surface = plainText(node.children)
+                .replace(/\s+/gu, ' ')
+                .trim();
             for (const strong of (node.attributes?.strong ?? '').matchAll(
                 /[GH][0-9]{1,5}/giu,
             )) {
-                current.strongNumbers.add(strong[0].toUpperCase());
+                const number = strong[0].toUpperCase();
+                current.strongNumbers.add(number);
+                if (surface) {
+                    if (!current.strongTerms.has(number))
+                        current.strongTerms.set(number, new Set());
+                    current.strongTerms.get(number).add(surface);
+                }
             }
             node.children?.forEach(visit);
             return;
